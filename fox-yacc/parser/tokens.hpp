@@ -8,9 +8,13 @@ namespace prs
 {
 	enum class token : std::uint32_t
 	{
-		IDENTIFIER = std::numeric_limits<char>::max() + 1, // char literals stand for themselves
-		TAG, // < C_IDENTIFIER >
-		C_STRING, 
+		LITERAL,
+		IDENTIFIER,
+		TAG, // < IDENTIFIER >
+
+		C_DECLARATION,		// used for %{ C CODE %}
+		C_ACTION,			// used for { C CODE }
+		C_DEFINITION,		// used for the last %% segment
 
 		COLON,				// :
 		SEMICOLON,			// ;
@@ -29,11 +33,10 @@ namespace prs
 		UNION,				// %union
 
 		MARK,				// the %% mark
-		LCURL,				// the %{ mark
-		RCURL,				// the %} mark
 
 		END_OF_FILE,		// end of file marker
 		INVALID_TOKEN,		// invalid token marker
+		UNKNOWN,			// sane default value
 	};
 
 	struct token_info
@@ -48,10 +51,12 @@ namespace prs
 
 	struct token_entry // used inside a token list
 	{
-		token value;
-		token_info* info;
+		token value = token::UNKNOWN;
+		token_info* info = nullptr;
 
 		operator token() const { return value; }
+
+		operator bool() const { return value != token::UNKNOWN; }
 	};
 
 	inline token to_token(char c)
@@ -78,4 +83,58 @@ namespace prs
 	{
 		return rhs != lhs;
 	}
+
+	/*
+	 
+	inline bool operator==(const token_entry& lhs, char rhs)
+	{
+		return lhs.value == to_token(rhs);
+	}
+
+	inline bool operator==(char lhs, const token_entry& rhs)
+	{
+		return rhs == lhs;
+	}
+
+	inline bool operator!=(const token_entry& lhs, char rhs)
+	{
+		return lhs.value != to_token(rhs);
+	}
+
+	inline bool operator!=(char lhs, const token_entry& rhs)
+	{
+		return rhs != lhs;
+	}
+
+	inline bool operator==(const token_entry& lhs, token rhs)
+	{
+		return lhs.value == rhs;
+	}
+	*/
+
+	inline bool operator==(token lhs, const token_entry& rhs)
+	{
+		return rhs.value == lhs;
+	}
+
+	inline bool operator!=(const token_entry& lhs, token rhs)
+	{
+		return lhs.value != rhs;
+	}
+
+	inline bool operator!=(token lhs, const token_entry& rhs)
+	{
+		return rhs.value != lhs;
+	}
 }
+
+template<>
+struct std::hash<prs::token_entry>
+{
+	size_t operator()(const prs::token_entry& v) const noexcept
+	{
+		return
+			std::hash<uint32_t>{}(std::to_underlying(v.value)) ^
+			std::hash<void*>{}(v.info);
+	}
+};

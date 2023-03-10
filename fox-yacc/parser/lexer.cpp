@@ -11,26 +11,32 @@ prs::token_entry prs::lexer::next_token()
 
 	if (in_range())
 	{
-		if (interpret_identifier(out));
-		else if (interpret_command(out));
-		else if (interpret_literal(out));
-		else if (interpret_number(out));
-		else if (interpret_tag(out));
-		else if (interpret_c_string(out));
-		else if (interpret_colon(out));
-		else if (interpret_semicolon(out));
-		else if (interpret_comma(out));
-		else if (interpret_or(out));
-		else
-		{
+		[[maybe_unused]] bool v =
+			interpret_identifier(out) ||
+			interpret_command(out) ||
+			interpret_literal(out) ||
+			interpret_number(out) ||
+			interpret_tag(out) ||
+			interpret_c_action(out) ||
+			interpret_colon(out) ||
+			interpret_semicolon(out) ||
+			interpret_comma(out) ||
+			interpret_or(out) ||
 			generate_invalid_token(out);
-		}
 
 		return out;
 	}
 
 	this->push_state();
 	build_token_entry(token::END_OF_FILE, out);
+	return out;
+}
+
+prs::token_entry prs::lexer::c_definition_token()
+{
+	prs::token_entry out;
+	current_ = std::size(input_);
+	build_token_entry(token::C_DEFINITION, out);
 	return out;
 }
 
@@ -53,11 +59,6 @@ void prs::lexer::marker_forward()
 		c_ = input_[current_];
 	else
 		c_ = '\0';
-}
-
-void prs::lexer::marker_backward()
-{
-	// TODO: 
 }
 
 void prs::lexer::assert_marker_in_range()
@@ -98,7 +99,7 @@ bool prs::lexer::build_token_entry(token type, token_entry& entry, std::string_v
 		current_ - pushed_current_
 	);
 
-	auto& info = tokens_[tkn];
+	auto& info = tokens_.emplace_back();
 	info.token = tkn;
 	info.line = static_cast<uint32_t>(debug_line_);
 	info.column = static_cast<uint32_t>(debug_col_);
@@ -249,7 +250,7 @@ bool prs::lexer::interpret_literal(token_entry& entry)
 		return pop_state();
 
 	this->marker_forward();
-	return build_token_entry(static_cast<token>(marker), entry);
+	return build_token_entry(token::LITERAL, entry, {}, marker);
 }
 
 bool prs::lexer::interpret_tag(token_entry& entry)
@@ -290,8 +291,10 @@ bool prs::lexer::interpret_tag(token_entry& entry)
 	return build_token_entry(token::TAG, entry, std::string_view(tag_start, tag_size));
 }
 
-bool prs::lexer::interpret_c_string(token_entry& entry)
+bool prs::lexer::interpret_c_action(token_entry& entry)
 {
+	// TODO: Account for braces inside comments
+
 	assert_marker_in_range();
 	push_state();
 
@@ -318,7 +321,7 @@ bool prs::lexer::interpret_c_string(token_entry& entry)
 	}
 
 	this->marker_forward();
-	return build_token_entry(token::C_STRING, entry);
+	return build_token_entry(token::C_ACTION, entry);
 }
 
 bool prs::lexer::interpret_colon(token_entry& entry)
@@ -402,12 +405,23 @@ bool prs::lexer::interpret_command(token_entry& entry)
 	else if (c() == '{')
 	{
 		this->marker_forward();
-		return build_token_entry(token::LCURL, entry);
-	}
-	else if (c() == '}')
-	{
+
+		const char* body_start = std::data(input_) + current_;
+		size_t body_size = 0;
+		char marker = c();
 		this->marker_forward();
-		return build_token_entry(token::RCURL, entry);
+
+		while(marker != '%' && c() != '}')
+		{
+			if (!in_range())
+				return pop_state();
+
+			body_size += 1;
+			marker = c();
+			this->marker_forward();
+		}
+
+		return build_token_entry(token::C_DECLARATION, entry, std::string_view{body_start, body_size});
 	}
 
 	size_t hash = 0;

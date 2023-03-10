@@ -3,6 +3,7 @@
 #include <string>
 
 #include "parser/lexer.hpp"
+#include "parser/parser.hpp"
 
 int main()
 {
@@ -13,15 +14,10 @@ int main()
 
 	prs::lexer lx(input);
 
-	while(true)
-	{
-		auto token = lx.next_token();
+	prs::parser ps(lx);
 
-		std::cout << token.info->token << '\t' << token.info->string_value << '\n';
-
-		if (token.value == prs::token::END_OF_FILE || token.value == prs::token::INVALID_TOKEN)
-			break;
-	}
+	ps.parse();
+	auto ast = ps.ast();
 
 	return 0;
 }
