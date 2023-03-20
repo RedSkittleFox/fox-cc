@@ -10,7 +10,7 @@ int main()
 {
 	std::fstream file("test.yacc");
 	std::string input(
-		std::istreambuf_iterator<char>{file}, std::istreambuf_iterator<char>{}
+		std::istreambuf_iterator<char>{ file }, std::istreambuf_iterator<char>{}
 	);
 
 	prs::lexer lx(input);

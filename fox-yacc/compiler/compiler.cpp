@@ -10,8 +10,8 @@ void cmp::compiler::generate_char_tokens()
 
 		tokens_[i] =
 		{
-			.type = p_default_t_,
-			.value = i,
+			.type = p_default_token_type_,
+			.token_id = static_cast<token_id_t>(i),
 			.name = std::move(name),
 			.terminal = true
 		};
@@ -26,7 +26,7 @@ void cmp::compiler::generate_terminal_tokens()
 		// TODO: Deduce assoc
 
 		// Deduce type
-		const std::string* type = p_default_t_;
+		const std::string* type = p_default_token_type_;
 
 		if (static_cast<bool>(def.tag))
 		{
@@ -68,7 +68,7 @@ void cmp::compiler::generate_terminal_tokens()
 
 			e.type = type;
 			e.name = term.name.info->string_value;
-			e.value = pos;
+			e.token_id = pos;
 			e.terminal = true;
 		}
 	}
@@ -91,7 +91,7 @@ void cmp::compiler::generate_production_tokens()
 
 		auto& e = tokens_[pos];
 
-		const std::string* type = p_default_t_;
+		const std::string* type = p_default_token_type_;
 
 		if (auto r = ast_.name_type.find(prod.name); r != std::end(ast_.name_type))
 		{
@@ -101,7 +101,7 @@ void cmp::compiler::generate_production_tokens()
 
 		e.type = type;
 		e.name = prod.name.info->string_value;
-		e.value = pos;
+		e.token_id = pos;
 		e.terminal = false;
 	}
 }
@@ -125,6 +125,7 @@ void cmp::compiler::generate_production_table()
 	if (std::empty(ast_.productions))
 		error("No productions.");
 
+	// Pick starting production
 	if(ast_.start_identifier)
 	{
 		start_production_
@@ -136,8 +137,7 @@ void cmp::compiler::generate_production_table()
 			= token_id_by_name(ast_.productions.front().name.info->string_value);
 	}
 
-	// TODO: Include code segments
-
+	// Generate all producitons
 	for(auto& prod : ast_.productions)
 	{
 		auto name
@@ -145,18 +145,31 @@ void cmp::compiler::generate_production_table()
 
 		for(auto& rule : prod.rules)
 		{
-			std::vector<size_t> rules;
+			std::vector<production_symbol_t> rules;
 
 			for(size_t i{}; i < std::size(rule.tokens); ++i)
 			{
 				if(auto v = rule.tokens[i].value; 
 					v == prs::token::IDENTIFIER || v == prs::token::LITERAL)
 				{
-					rules.push_back(token_id_by_name(rule.tokens[i].info->string_value));
+					rules.push_back({ token_id_by_name(rule.tokens[i].info->string_value) });
+				}
+				else if(v == prs::token::C_ACTION) // Attach action
+				{
+					// Action has to be attached to some matched statement
+					if (std::empty(rules))
+						error("Invalid c-action");
+
+					rules.back().action_id = std::size(actions_);
+					actions_.emplace_back(rule.tokens[i]);
+				}
+				else
+				{
+					error("");
 				}
 			}
 
-			// Don't let them default to std::slice_array<T>, it's evil!
+			// Optimize memory
 			rules.shrink_to_fit();
 
 			productions_.insert(std::make_pair(name, std::move(rules)));
@@ -182,9 +195,11 @@ void cmp::compiler::generate_first_sets()
 			}
 			else if(productions_.contains(prod[0])) // if non-terminal
 			{
-				first_set.insert_range(first_sets_[prod[0]]);
+				auto s = first_sets_[prod[0]];
+				s.erase(0);
+				first_set.merge(std::move(s));
 			}
-			else // if terminal
+			else if((prod[0] == 0 && std::size(prod) == 1) || prod[0] != 0) // if terminal
 			{
 				first_set.insert(prod[0]); 
 			}
@@ -235,20 +250,18 @@ bool cmp::compiler::closure_populate_state(size_t state_id)
 
 	auto& s = states_[state_id];
 
-	std::set<state::production> new_productions;
-
 	do
 	{
 		modified = false;
 
-		for(const auto& prod : s.productions)
+		for(const auto& prod : s.productions | std::views::keys)
 		{
 			for(const auto t : prod.prod)
 			{
-				if(state_insert_productions(s, t))
+				if(modified = state_insert_productions(s, t); modified)
 				{
-					modified = true;
-					goto break_outer;
+					// above potentially invalidates iterators, that's why we enter the loop again
+					goto break_outer; 
 				}
 			}
 		}
@@ -269,13 +282,17 @@ bool cmp::compiler::closure_generate_follow_sets(size_t state_id)
 
 	auto& s = states_[state_id];
 
-	std::map<size_t, std::set<size_t>> follow_sets;
+	std::map<non_terminal_id_t, std::set<terminal_id_t>> follow_sets;
+
+	// Populate follow sets with current follows
+	for (const auto& [prod, follow] : s.productions)
+		follow_sets[prod.name] = follow;
 
 	do
 	{
 		modified = false;
 
-		for (const auto& prod : s.productions)
+		for (const auto& prod : s.productions | std::views::keys)
 		{
 			if (std::empty(prod.prod))
 				continue;
@@ -288,6 +305,8 @@ bool cmp::compiler::closure_generate_follow_sets(size_t state_id)
 
 			auto& follow_set = follow_sets[R];
 
+			const auto old_size = std::size(follow_set);
+
 			// ... = ... . R a -> can be followed by a
 			if(std::size(prod.prod) >= 2 && !productions_.contains(prod.prod[1]))
 			{
@@ -296,29 +315,28 @@ bool cmp::compiler::closure_generate_follow_sets(size_t state_id)
 			// ... = ... R A -> can be followed by FIRST(A)
 			else if(std::size(prod.prod) >= 2 && productions_.contains(prod.prod[1]))
 			{
-				const auto old_size = std::size(follow_set);
 				follow_set.insert_range(first_sets_[prod.prod[1]]);
-				modified = modified || (old_size != std::size(follow_set));
 			}
 			// A = ... . R -> can be followed by FOLLOW(A)
 			else if(std::size(prod.prod) == 1)
 			{
-				const auto old_size = std::size(follow_set);
 				follow_set.insert_range(follow_sets[prod.name]);
-				modified = modified || (old_size != std::size(follow_set));
 			}
+
+			modified = modified || (old_size != std::size(follow_set));
 		}
 
 		modified_once |= modified;
 	} while (modified);
 
 	// Apply follow sets
-	for (const auto& prod : s.productions)
+	for (auto& [prod, follow] : s.productions)
 	{
+		// Only apply them to non-canonical productions
 		if (!std::empty(prod.stack))
 			continue;
 
-		prod.follow.insert_range(follow_sets[prod.name]);
+		follow = follow_sets[prod.name];
 	}
 
 	return modified_once;
@@ -332,9 +350,9 @@ std::vector<size_t> cmp::compiler::generate_gotos(size_t state_id)
 	auto* s = std::addressof(states_[state_id]);
 
 	// Generate possible following tokens
-	std::set<size_t> followers;
+	std::set<token_id_t> followers;
 
-	for (auto& prod : s->productions)
+	for (auto& prod : s->productions | std::views::keys)
 	{
 		if (!std::empty(prod.prod))
 			followers.insert(prod.prod[0]);
@@ -342,9 +360,9 @@ std::vector<size_t> cmp::compiler::generate_gotos(size_t state_id)
 
 	for (auto f : followers)
 	{
-		struct state out_s;
+		state out_s;
 
-		for (auto& prod : s->productions)
+		for (auto& [prod, follow] : s->productions)
 		{
 			if (!std::empty(prod.prod))
 			{
@@ -352,7 +370,6 @@ std::vector<size_t> cmp::compiler::generate_gotos(size_t state_id)
 				{
 					state::production out_p;
 					out_p.name = prod.name;
-					out_p.follow = prod.follow;
 					out_p.prod = prod.prod.subspan(1);
 
 					if(std::empty(prod.stack))
@@ -365,7 +382,7 @@ std::vector<size_t> cmp::compiler::generate_gotos(size_t state_id)
 						out_p.stack = std::span(std::data(prod.stack), std::size(prod.stack) + 1);
 					}
 
-					out_s.productions.insert(std::move(out_p));
+					out_s.productions.insert(std::make_pair(out_p, follow));
 				}
 			}
 		}
@@ -392,18 +409,10 @@ void cmp::compiler::merge_states(size_t source_state, std::vector<size_t>& new_s
 	for(auto& cs : new_states)
 	{
 		auto& c = states_[cs];
-		auto r = std::ranges::find_if(states_, [c](const state& s) -> bool
+
+		auto r = std::ranges::find_if(states_, [&](const state& other) -> bool
 			{
-				return std::ranges::equal(c.productions, s.productions,
-					[](const state::production& lhs, const state::production& rhs) -> bool
-					{
-						return
-							lhs.name == rhs.name &&
-							std::ranges::equal(lhs.stack, rhs.stack) &&
-							std::ranges::equal(lhs.prod, rhs.prod) &&
-							lhs.follow == rhs.follow;
-					}
-				);
+				return other.productions == c.productions;
 			}
 		);
 
@@ -459,7 +468,7 @@ void cmp::compiler::merge_states(size_t source_state, std::vector<size_t>& new_s
 	}
 }
 
-bool cmp::compiler::state_insert_productions(state& s, size_t production, const std::set<size_t>& followers)
+bool cmp::compiler::state_insert_productions(state& s, non_terminal_id_t production)
 {
 	auto r = productions_.equal_range(production);
 	auto sr = std::ranges::subrange(r.first, r.second);
@@ -471,25 +480,13 @@ bool cmp::compiler::state_insert_productions(state& s, size_t production, const 
 		state::production prod
 		{
 			.name = p.first,
-			.prod = p.second,
-			.follow = followers
+			.prod = p.second
 		};
 
-		const auto r = s.productions.find(prod);
+		const auto old_size = std::size(s.productions);
+		(void)s.productions[prod];
 
-		if(r == std::end(s.productions))
-		{
-			modified = true;
-			s.productions.insert(std::move(prod));
-		}
-		else
-		{
-			const auto old_size = std::size(r->follow);
-			r->follow.insert_range(followers);
-
-			// Check if insertion changed anything
-			modified = modified || (old_size != std::size(r->follow));
-		}
+		modified = modified || std::size(s.productions) != old_size;
 	}
 
 	return modified;
@@ -506,14 +503,14 @@ cmp::compiler::token* cmp::compiler::token_by_name(std::string_view sv)
 	return std::addressof(*r);
 }
 
-size_t cmp::compiler::token_id_by_name(std::string_view sv)
+cmp::token_id_t cmp::compiler::token_id_by_name(std::string_view sv)
 {
 	const auto r = token_by_name(sv);
 
 	if (r == nullptr)
-		return std::numeric_limits<size_t>::max();
+		return std::numeric_limits<cmp::token_id_t>::max();
 
-	return r->value;
+	return r->token_id;
 }
 
 void cmp::compiler::debug_print()
@@ -524,7 +521,7 @@ void cmp::compiler::debug_print()
 
 		std::cout << "====== " << i << " ======\n";
 
-		for(auto& prod : s.productions)
+		for(auto& [prod, follow] : s.productions)
 		{
 			std::cout << tokens_[prod.name].name << " -> ";
 
@@ -538,7 +535,7 @@ void cmp::compiler::debug_print()
 
 			std::cout << " { ";
 
-			for (auto f : prod.follow)
+			for (auto f : follow)
 				if (f != 0)
 					std::cout << tokens_[f].name;
 				else std::cout << "$";

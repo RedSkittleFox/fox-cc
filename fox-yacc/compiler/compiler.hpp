@@ -11,6 +11,7 @@
 #include <ranges>
 
 #include "../parser/parser.hpp"
+#include "compiler_types.hpp"
 
 namespace cmp
 {
@@ -20,60 +21,100 @@ namespace cmp
 
 		const prs::yacc_ast& ast_;
 
-		std::set<std::string, std::less<>> types_;
+		// List of types
+		std::set<std::string> types_;
+
+		enum class token_assoc
+		{
+			first,
+			left,
+			right,
+			no_assoc
+		};
 
 		struct token
 		{
-			const std::string* type = nullptr; // use to see if token is valid
-			size_t value;
-			std::string name;
-			// TODO: Assoc
-			bool terminal;
+			const std::string* type = nullptr;	// use to see if token is valid
+			token_id_t token_id;				// token id
+			std::string name;					// token name/value
+			token_assoc assoc;					// associativity
+			bool terminal;						// is a terminal symbol
+
+			// Debug information
+			prs::token_entry prs_token_definition;
 		};
 
+		// List of tokens, position corresponds to token id
 		std::vector<token> tokens_;
 
-		const std::string* p_default_t_;
+		// Pointer to default token type (if unspecified)
+		const std::string* p_default_token_type_;
+
+		// Token free list, used during token list generation
 		std::vector<uint16_t> token_free_list_;
 
-		size_t start_production_;
-		std::multimap<size_t, std::vector<size_t>> productions_;
-		std::map<size_t, std::set<size_t>> first_sets_;
+		// Starting production in the grammar
+		non_terminal_id_t start_production_;
 
+		struct action
+		{
+			action(prs::token_entry)
+			{
+				
+			}
+		};
+
+		std::vector<action> actions_;
+
+		// Map of non-terminals and productions
+		std::multimap<non_terminal_id_t, std::vector<production_symbol_t>> productions_;
+
+		// First sets (sets of terminals that a non-terminal can start with)
+		std::map<non_terminal_id_t, std::set<terminal_id_t>> first_sets_;
+
+		// Structure describing the state in a LR(1) parser
 		struct state
 		{
 			struct production
 			{
-				size_t name;
-				std::span<const size_t> stack;
-				std::span<const size_t> prod;
+				non_terminal_id_t name;
+				std::span<const production_symbol_t> stack;
+				std::span<const production_symbol_t> prod;
 
-				mutable std::set<size_t> follow; // HACK: this does not affect comparison
-
-				std::strong_ordering operator<=>(const production& prod) const
+				auto operator<=>(const production& other) const noexcept
 				{
-					if (auto cmp = name <=> prod.name; cmp != 0)
+					if (const auto cmp = name <=> other.name; cmp != nullptr)
 						return cmp;
 
-					if (auto cmp =
-						std::lexicographical_compare_three_way(std::begin(stack), std::end(stack),
-							std::begin(prod.stack), std::end(prod.stack)); cmp != 0)
+					if (const auto cmp =
+						std::lexicographical_compare_three_way
+						(
+							std::begin(stack), std::end(stack),
+							std::begin(other.stack), std::end(other.stack));
+							cmp != nullptr
+						)
 						return cmp;
 
-					if (auto cmp =
-						std::lexicographical_compare_three_way(std::begin(this->prod), std::end(this->prod),
-							std::begin(prod.prod), std::end(prod.prod)); cmp != 0)
-						return cmp;
+					return std::lexicographical_compare_three_way
+					(
+						std::begin(prod), std::end(prod),
+						std::begin(other.prod), std::end(other.prod)
+					);
+				}
 
-					return std::strong_ordering(0); // don't distinguish by follow set
+				friend bool operator==(const production& lhs, const production& rhs) 
+				{
+					return
+						lhs.name == rhs.name &&
+						std::ranges::equal(lhs.stack, rhs.stack) &&
+						std::ranges::equal(lhs.prod, rhs.prod);
 
-					// return std::lexicographical_compare_three_way(std::begin(follow), std::end(follow),
-					// 	std::begin(prod.follow), std::end(prod.follow));
 				}
 			};
 
-			std::set<production> productions;
-			std::map<size_t, size_t> transitions;
+			std::map<production, std::set<terminal_id_t>> productions;
+
+			std::map<token_id_t /*token in*/, size_t /*state id*/> transitions; // Transitions 
 		};
 
 		std::vector<state> states_;
@@ -97,7 +138,7 @@ namespace cmp
 		void compile()
 		{
 			// Create default type 
-			p_default_t_ = std::addressof(*types_.insert(default_type).first);
+			p_default_token_type_ = std::addressof(*types_.insert(default_type).first);
 
 			token_free_list_ = std::vector<uint16_t>(512 - 128);
 			std::iota(std::rbegin(token_free_list_), std::rend(token_free_list_), 128); // generate a free list
@@ -110,6 +151,7 @@ namespace cmp
 
 			// Productions
 			generate_production_table();
+
 			generate_first_sets();
 			generate_states();
 		}
@@ -130,11 +172,11 @@ namespace cmp
 		[[maybe_unused]] std::vector<size_t> generate_gotos(size_t state_id);
 		void merge_states(size_t source_state, std::vector<size_t>& new_states);
 
-		bool state_insert_productions(state& s, size_t production, const std::set<size_t>& followers = {});
+		bool state_insert_productions(state& s, non_terminal_id_t production);
 
 	private:
 		token* token_by_name(std::string_view sv);
-		size_t token_id_by_name(std::string_view sv);
+		token_id_t token_id_by_name(std::string_view sv);
 
 
 		[[noreturn]] void error(const char* msg)
@@ -144,7 +186,7 @@ namespace cmp
 
 		void assert_unique_name(prs::token_entry e)
 		{
-			auto r = std::find_if(std::begin(tokens_), std::end(tokens_),
+			auto r = std::ranges::find_if(tokens_,
 				[=](const token& t)->bool {return t.name == e.info->string_value; });
 
 			assert(r == std::end(tokens_));
