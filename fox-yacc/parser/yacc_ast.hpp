@@ -17,8 +17,8 @@ namespace prs
 		// %start name
 		token_entry start_identifier;
 
-		// %union { body of union (in C) }
-		token_entry union_identifier;
+		// %variant type [type]
+		std::vector<token_entry> variant_types;
 
 		// %token [<tag>] name [number] [name [number]]
 		struct definition

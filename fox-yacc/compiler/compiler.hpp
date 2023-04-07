@@ -119,6 +119,9 @@ namespace cmp
 
 		std::vector<state> states_;
 
+		action_goto_table_t out_action_goto_table_;
+		production_list_t out_production_list_;
+
 	public:
 		compiler() = delete;
 
@@ -135,31 +138,12 @@ namespace cmp
 		~compiler() noexcept = default;
 
 	public:
-		void compile()
-		{
-			// Create default type 
-			p_default_token_type_ = std::addressof(*types_.insert(default_type).first);
-
-			token_free_list_ = std::vector<uint16_t>(512 - 128);
-			std::iota(std::rbegin(token_free_list_), std::rend(token_free_list_), 128); // generate a free list
-
-			// Generate tokens table
-			generate_char_tokens();
-			generate_terminal_tokens();
-			generate_production_tokens();
-			optimize_token_table();
-
-			// Productions
-			generate_production_table();
-
-			generate_first_sets();
-			generate_states();
-		}
+		void compile();
 
 	private:
-		void generate_char_tokens();
-		void generate_terminal_tokens();
-		void generate_production_tokens();
+		void init_char_tokens();
+		void init_terminal_tokens();
+		void init_production_tokens();
 		void optimize_token_table();
 
 	private:
@@ -178,7 +162,6 @@ namespace cmp
 		token* token_by_name(std::string_view sv);
 		token_id_t token_id_by_name(std::string_view sv);
 
-
 		[[noreturn]] void error(const char* msg)
 		{
 			assert(false && msg);
@@ -187,10 +170,15 @@ namespace cmp
 		void assert_unique_name(prs::token_entry e)
 		{
 			auto r = std::ranges::find_if(tokens_,
-				[=](const token& t)->bool {return t.name == e.info->string_value; });
+				[=](const token& t)->bool { return t.name == e.info->string_value; });
 
 			assert(r == std::end(tokens_));
 		}
+
+	private:
+		void generate_production_list();
+		void generate_action_table();
+		void generate_goto_table();
 
 	public:
 		void debug_print();

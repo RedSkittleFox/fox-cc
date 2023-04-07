@@ -384,12 +384,12 @@ bool prs::lexer::interpret_command(token_entry& entry)
 	constexpr size_t hash_token = 't' + 'o' + 'k' + 'e' + 'n';
 	constexpr size_t hash_prec = 'p' + 'r' + 'e' + 'c';
 	constexpr size_t hash_start = 's' + 't' + 'a' + 'r' + 't';
-	constexpr size_t hash_union = 'u' + 'n' + 'i' + 'o' + 'n';
+	constexpr size_t hash_variant = 'v' + 'a' + 'r' + 'i' + 'a' + 'n' + 't';
 
 	assert((std::set<size_t>
 		{
 			hash_type, hash_left, hash_right, hash_nonassoc,
-			hash_token, hash_prec, hash_start, hash_union
+			hash_token, hash_prec, hash_start, hash_variant
 		}.size() == 8));
 
  	if (c() != '%')
@@ -451,8 +451,8 @@ bool prs::lexer::interpret_command(token_entry& entry)
 		return build_token_entry(token::PREC, entry);
 	case hash_start:
 		return build_token_entry(token::START, entry);
-	case hash_union:
-		return build_token_entry(token::UNION, entry);
+	case hash_variant:
+		return build_token_entry(token::VARIANT, entry);
 	default:;
 	}
 

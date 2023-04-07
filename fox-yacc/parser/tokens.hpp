@@ -30,7 +30,7 @@ namespace prs
 		TOKEN,				// %token
 		PREC,				// %prec
 		START,				// %start
-		UNION,				// %union
+		VARIANT,			// %variant
 
 		MARK,				// the %% mark
 

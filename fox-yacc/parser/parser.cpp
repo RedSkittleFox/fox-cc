@@ -69,8 +69,8 @@ void prs::parser::parse_def()
 	case START:
 		parse_def_start();
 		break;
-	case UNION:
-		parse_def_union();
+	case VARIANT:
+		parse_def_variant();
 		break;
 	case LEFT:
 	case RIGHT:
@@ -105,18 +105,21 @@ void prs::parser::parse_def_start()
 	next_token();
 }
 
-void prs::parser::parse_def_union()
+void prs::parser::parse_def_variant()
 {
-	expect(token::UNION);
+	expect(token::VARIANT);
 	next_token();
 
-	expect(token::C_ACTION);
-
-	if (static_cast<bool>(ast_.union_identifier) == true)
+	if (!std::empty(ast_.variant_types))
 		error();
-	ast_.union_identifier = e0();
 
-	next_token();
+	expect(token::IDENTIFIER);
+
+	while(e0() == token::IDENTIFIER)
+	{
+		ast_.variant_types.push_back(e0());
+		next_token();
+	}
 }
 
 void prs::parser::parse_def_token()
