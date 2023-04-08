@@ -5,6 +5,7 @@
 #include "parser/lexer.hpp"
 #include "parser/parser.hpp"
 #include "compiler/compiler.hpp"
+#include "lex_compiler/lex_compiler.hpp"
 
 int main()
 {
@@ -20,10 +21,13 @@ int main()
 	ps.parse();
 	auto ast = ps.ast();
 
-	cmp::compiler cp(ast);
-	cp.compile();
+	fox_cc::lex_compiler lex_cmp;
+	lex_cmp.compile(ast);
 
-	cp.debug_print();
+	// cmp::compiler cp(ast);
+	// cp.compile();
+
+	// cp.debug_print();
 
 	return 0;
 }

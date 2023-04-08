@@ -27,12 +27,12 @@ void cmp::compiler::generate_production_table()
 		{
 			std::vector<production_symbol_t> rules;
 
-			for (size_t i{}; i < std::size(rule.tokens); ++i)
+			for (size_t i{}; i < std::size(rule); ++i)
 			{
-				if (auto v = rule.tokens[i].value;
+				if (auto v = rule[i].value;
 					v == prs::token::IDENTIFIER || v == prs::token::LITERAL)
 				{
-					rules.push_back({ token_id_by_name(rule.tokens[i].info->string_value) });
+					rules.push_back({ token_id_by_name(rule[i].info->string_value) });
 				}
 				else if (v == prs::token::C_ACTION) // Attach action
 				{
@@ -41,7 +41,7 @@ void cmp::compiler::generate_production_table()
 						error("Invalid c-action");
 
 					rules.back().action_id = std::size(actions_);
-					actions_.emplace_back(rule.tokens[i]);
+					actions_.emplace_back(rule[i]);
 				}
 				else
 				{

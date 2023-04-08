@@ -15,6 +15,7 @@ namespace prs
 		C_DECLARATION,		// used for %{ C CODE %}
 		C_ACTION,			// used for { C CODE }
 		C_DEFINITION,		// used for the last %% segment
+		REGEX,				// regex expression
 
 		COLON,				// :
 		SEMICOLON,			// ;

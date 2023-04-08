@@ -6,6 +6,12 @@ void prs::parser::next_token()
 	e1_ = lexer_.next_token();
 }
 
+void prs::parser::next_regex_token()
+{
+	e0_ = e1_;
+	e1_ = lexer_.next_regex_token();
+}
+
 prs::token_entry prs::parser::e0() const noexcept
 {
 	return e0_;
@@ -131,29 +137,25 @@ void prs::parser::parse_def_token()
 	{
 		.rword = e0()
 	};
-	next_token();
+
+	if (e1() == token::TAG)
+		next_token();
+	else
+		next_regex_token(); // this is actually correct, keep in mind we load e1, not e0!
 
 	if(e0() == token::TAG)
 	{
 		def.tag = e0();
-		next_token();
+		next_regex_token();
 	}
 
 	expect(token::IDENTIFIER);
-	do
-	{
-		auto& token = def.tokens.emplace_back();
-		token.name = e0();
+	def.name = e0();
+	next_token();
 
-		next_token();
-
-		if (e0() == token::NUMBER)
-		{
-			token.number = e0();
-			next_token();
-		}
-
-	} while (e0() == token::IDENTIFIER);
+	expect(token::REGEX); 
+	def.regex = e0();
+	next_token();
 
 	ast_.token_definitions.push_back(std::move(def));
 }
@@ -207,13 +209,13 @@ void prs::parser::parse_prod()
 
 		if (e0() == IDENTIFIER)
 		{
-			rule.tokens.push_back(e0());
+			rule.push_back(e0());
 			next_token();
 		}
 
 		while (e0() == IDENTIFIER || e0() == LITERAL || e0() == C_ACTION)
 		{
-			rule.tokens.push_back(e0());
+			rule.push_back(e0());
 			next_token();
 		}
 

@@ -37,6 +37,7 @@ void cmp::compiler::init_terminal_tokens()
 
 		// Iterate over terminals
 
+#if 0 
 		for (auto& term : def.tokens)
 		{
 			assert_unique_name(term.name);
@@ -72,6 +73,7 @@ void cmp::compiler::init_terminal_tokens()
 			e.token_id = pos;
 			e.terminal = true;
 		}
+#endif
 	}
 }
 

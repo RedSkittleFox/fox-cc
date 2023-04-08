@@ -47,6 +47,7 @@ namespace prs
 
 	public:
 		token_entry next_token();
+		token_entry next_regex_token();
 		token_entry c_definition_token();
 
 	private:
@@ -83,6 +84,9 @@ namespace prs
 
 		// [a-zA-Z][a-zA-Z_0-9]*
 		bool interpret_identifier(token_entry& entry);
+
+		// Any regex expression
+		bool interpret_regex(token_entry& entry);
 
 		// 'CHAR' or 'ESCAPE'
 		bool interpret_literal(token_entry& entry);

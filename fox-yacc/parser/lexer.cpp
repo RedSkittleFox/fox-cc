@@ -32,6 +32,23 @@ prs::token_entry prs::lexer::next_token()
 	return out;
 }
 
+prs::token_entry prs::lexer::next_regex_token()
+{
+	token_entry out;
+
+	while (in_range() && (consume_space() || consume_comment()));
+
+	if(in_range())
+	{
+		interpret_regex(out);
+		return out;
+	}
+
+	this->push_state();
+	build_token_entry(token::END_OF_FILE, out);
+	return out;
+}
+
 prs::token_entry prs::lexer::c_definition_token()
 {
 	prs::token_entry out;
@@ -230,6 +247,20 @@ bool prs::lexer::interpret_identifier(token_entry& entry)
 	}
 
 	return build_token_entry(token::IDENTIFIER, entry);
+}
+
+bool prs::lexer::interpret_regex(token_entry& entry)
+{
+	assert_marker_in_range();
+	push_state();
+
+	if (std::isspace(c()))
+		return pop_state();
+
+	while (!std::isspace(c()))
+		this->marker_forward();
+
+	return build_token_entry(token::REGEX, entry);
 }
 
 bool prs::lexer::interpret_literal(token_entry& entry)

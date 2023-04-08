@@ -39,6 +39,7 @@ namespace prs
 
 	private:
 		void next_token();
+		void next_regex_token();
 
 		[[nodiscard]] token_entry e0() const noexcept;
 		[[nodiscard]] token_entry e1() const noexcept;

@@ -20,19 +20,13 @@ namespace prs
 		// %variant type [type]
 		std::vector<token_entry> variant_types;
 
-		// %token [<tag>] name [number] [name [number]]
+		// %token [<tag>] name REGEX
 		struct definition
 		{
 			token_entry rword;
 			token_entry tag; // optional
-
-			struct token
-			{
-				token_entry name;
-				token_entry number;
-			};
-
-			std::vector<token> tokens;
+			token_entry name;
+			token_entry regex;
 		};
 
 		std::vector<definition> token_definitions;
@@ -44,10 +38,7 @@ namespace prs
 		{
 			token_entry name;
 
-			struct rule
-			{
-				std::vector<token_entry> tokens;
-			};
+			using rule = std::vector<token_entry>;
 
 			std::vector<rule> rules;
 		};
