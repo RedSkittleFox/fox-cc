@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../fox_cc.hpp"
-#include "../parser/yacc_ast.hpp"
+#include <fox_cc.hpp>
+#include <internal_parser/yacc_ast.hpp>
 
 #include <bitset>
 #include <map>

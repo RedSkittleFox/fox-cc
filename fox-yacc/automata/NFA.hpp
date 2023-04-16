@@ -23,7 +23,6 @@ namespace fox_cc
 		{
 		public:
 			inline static constexpr size_t state_id_npos = std::numeric_limits<size_t>::max();
-		private:
 			class nfa_state
 			{
 				template<class, class, class>
@@ -63,6 +62,7 @@ namespace fox_cc
 				}
 			};
 
+		private:
 			size_t start_ = state_id_npos;
 			std::set<size_t> accept_;
 			std::vector<nfa_state> states_;
@@ -303,6 +303,26 @@ namespace fox_cc
 					move_state(std::size(states_) - 1, state_id);
 				}
 			}
+
+		private:
+			void optimize_remove_epsilon_edges()
+			{
+				
+			}
+
+			void optimize_remove_unreachable_states()
+			{
+				
+			}
+
+		public:
+			void optimize()
+			{
+				optimize_remove_epsilon_edges();
+				optimize_remove_unreachable_states();
+			}
 		};
+
+
 	}
 }

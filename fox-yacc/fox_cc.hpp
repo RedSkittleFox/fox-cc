@@ -3,9 +3,12 @@
 #include <vector>
 #include <string>
 #include <cassert>
+#include <bitset>
 
 namespace fox_cc
 {
+	using charset = std::bitset<128>;
+
 	template<class T>
 	class fixed_2D_array
 	{
