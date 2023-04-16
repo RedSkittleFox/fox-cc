@@ -26,3 +26,9 @@ if(MSVC)
         # PRIVATE /FR
     )
 endif()
+
+target_include_directories(
+    fox-yacc
+    PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
+)

@@ -4,237 +4,633 @@
 #include <cassert>
 #include <functional>
 
+#include <automata/NFA.hpp>
+
 #include "lex_compiler.hpp"
 
-using charset = fox_cc::lex_compiler::charset;
+using namespace fox_cc;
 
-fox_cc::lex_compiler::regex_productions fox_cc::lex_compiler::generate_production(std::string_view regex)
+using charset = lex_compiler::charset;
+
+enum class regex_parser_op
 {
-	size_t production_id_tracker = 0;
+	closure_zero_more,
+	closure_one_more,
+	closure_zero_one,
+	concatenation,
+	alternative,
+	left_parenthesis,
+	right_parenthesis
+};
 
-	using production_rule = std::vector<regex_productions::production_token>;
-	std::vector<size_t> production_stack;
-	std::vector<production_rule*> production_rule_stack;
-
-	regex_productions out;
-
-	auto push_production = [&]() -> void
+[[nodiscard]] inline size_t regex_parser_op_priority(regex_parser_op op)
+{
+	using enum regex_parser_op;
+	switch (op)
 	{
-		production_stack.push_back(production_id_tracker);
-		production_rule_stack.push_back(
-			std::addressof(out.productions.insert(std::make_pair(production_id_tracker, production_rule{}))->second)
-		);
-	};
+	case closure_one_more:
+	case closure_zero_more:
+	case closure_zero_one:
+		return 2;
+	case concatenation:
+		return 1;
+	case alternative:
+	case left_parenthesis:
+	case right_parenthesis:
+		return 0;
+	default:
+		assert(false);
+		return 0;
+	}
+}
 
-	auto new_production_rule = [&]() -> void
+struct regex_end {};
+
+using regex_parser_token = std::variant<std::monostate, charset, regex_parser_op, regex_end>;
+
+// converts regex to reverse polish notation regular expression, resolves character classes
+class regex_parser
+{
+	std::string_view str_;
+	size_t lexer_current_char_pos_ = {};
+	char lexer_current_char_ = std::empty(str_) ? '\0' : str_[lexer_current_char_pos_];
+
+	regex_parser_token c0_ = {};
+	regex_parser_token c1_ = {};
+
+public:
+	regex_parser() = delete;
+	regex_parser(const regex_parser&) = delete;
+	regex_parser(regex_parser&&) noexcept = delete;
+	regex_parser& operator=(const regex_parser&) = delete;
+	regex_parser& operator=(regex_parser&&) noexcept = delete;
+
+public:
+	regex_parser(std::string_view str) noexcept
+		: str_(str)
+	{}
+
+	~regex_parser() noexcept = default;
+
+private:
+	[[nodiscard]] regex_parser_token token();
+
+	[[nodiscard]] regex_parser_token lexer_token();
+	[[nodiscard]] bool lexer_escape_char(regex_parser_token& t);
+	[[nodiscard]] bool lexer_char_group(regex_parser_token& t);
+	[[nodiscard]] bool lexer_char(regex_parser_token& t);
+	[[nodiscard]] bool lexer_operator(regex_parser_token& t);
+	[[nodiscard]] bool lexer_end(regex_parser_token& t);
+	[[nodiscard]] bool lexer_error(regex_parser_token& t);
+
+	[[nodiscard]] char lexer_char() const noexcept;
+	void lexer_next_char() noexcept;
+
+private:
+	void error(const char* error_string);
+
+private:
+	// converts to reverse polish notation!
+	std::vector<regex_parser_token> compile_rpn();
+
+private:
+
+	using nfa = fox_cc::automata::nfa<automata::empty_state, charset>;
+	
+	static nfa nfa_empty_expression();
+	static nfa nfa_charset_expression(charset ch);
+	static nfa nfa_concatenation_expression(const nfa& lhs, const nfa& rhs);
+	static nfa nfa_union_expression(const nfa& lhs, const nfa& rhs);
+	static nfa nfa_closure_one_more_expression(const nfa& expr);
+	static nfa nfa_closure_zero_one_expression(const nfa& expr);
+	static nfa nfa_closure_zero_more_expression(const nfa& expr);
+
+	nfa compile_nfa(const std::vector<regex_parser_token>& rpn);
+
+public:
+	void compile();
+};
+
+regex_parser_token regex_parser::token()
+{
+	if(std::holds_alternative<std::monostate>(c0_))
 	{
-		production_rule_stack.back() =
-			std::addressof(out.productions.insert(std::make_pair(production_stack.back(), production_rule{}))->second);
-	};
+		c0_ = lexer_token();
+		c1_ = lexer_token();
+	}
 
-	auto pop_production = [&]() -> void
+	const auto ret = c0_;
+
+	// Insert fake concatenation ops
+	if(
+		std::holds_alternative<charset>(c0_) && std::holds_alternative<charset>(c1_) ||
+		std::holds_alternative<regex_parser_op>(c0_) && std::get<regex_parser_op>(c0_) == regex_parser_op::right_parenthesis && std::holds_alternative<charset>(c1_) ||
+		std::holds_alternative<charset>(c0_) && std::holds_alternative<regex_parser_op>(c1_) && std::get<regex_parser_op>(c1_) == regex_parser_op::left_parenthesis
+		)
 	{
-		size_t last_production = production_stack.back();
-		production_stack.pop_back();
-		production_rule_stack.pop_back();
-		production_rule_stack.back()->push_back({ .production = last_production });
-	};
-
-	auto current_rule = [&]() -> production_rule&
+		c0_ = regex_parser_op::concatenation;
+	}
+	else
 	{
-		return *production_rule_stack.back();
-	};
+		c0_ = c1_;
+		c1_ = lexer_token();
+	}
 
-	auto append = [&]<class T>(T cs) -> void
+	return ret;
+}
+
+regex_parser_token regex_parser::lexer_token()
+{
+	regex_parser_token out;
+
+	[[maybe_unused]] bool b = 
+		lexer_escape_char(out) || 
+		lexer_operator(out) || 
+		lexer_char_group(out) || 
+		lexer_end(out) ||
+		lexer_char(out) ||
+		lexer_error(out);
+
+	return out;
+}
+
+bool regex_parser::lexer_escape_char(regex_parser_token& t)
+{
+	if (this->lexer_char() != '\\')
+		return false;
+
+	this->lexer_next_char();
+
+	switch (this->lexer_char())
 	{
-		if constexpr (std::same_as<T, charset> || std::same_as<T, size_t>)
-			current_rule().push_back({ cs });
-		else if constexpr (std::same_as<T, char>)
-			current_rule().push_back({ charset{}.set(cs) });
-	};
+	case '(':
+	case ')':
+	case '[':
+	case ']':
+	case '?':
+	case '+':
+	case '*':
+	case '|':
+	case '/':
+		t = charset{}.set(this->lexer_char());
+		break;
+	case 'n':
+		t = charset{}.set('\n');
+		break;
+	case 't':
+		t = charset{}.set('\t');
+		break;
+	case 'd': // decimal characters
+		t = charset{}.set('0').set('1').set('2').set('3').set('4').set('5').set('6').set('7').set('8').set('9');
+		break;
+	default:
+		error("Unknown escape character."); // TODO: Which escape character!
+		return false;
+	}
 
-	push_production();
+	this->lexer_next_char();
+	return false;
+}
 
-	enum special_tokens
+bool regex_parser::lexer_char_group(regex_parser_token& t)
+{
+	if (this->lexer_char() != '[')
+		return false;
+
+	this->lexer_next_char();
+
+	charset out;
+	bool in_escape = false;
+
+	char range_start = '\0';
+	bool in_range = false;
+
+	while(this->lexer_char() != ']')
 	{
-		l_parentheses = -64,
-		r_parentheses,
-		l_brackets,
-		r_brackets,
-		star,
-		plus,
-		question_mark,
-		logic_or,
-		dash
-	};
+		if (this->lexer_char() == '\0')
+			error("Missing character group closing bracket.");
 
-	size_t current_char = 0;
-
-	auto lexer = [&, current_char = static_cast<size_t>(0)](bool minimal = false) mutable -> char
-	{
-		if (current_char == std::size(regex))
-			return '\0';
-
-		char c0 = regex[current_char];
-		char c1 = current_char + 1 >= std::size(regex) ? '\0' : regex[current_char + 1];
-		current_char += 1;
-
-		switch (c0)
+		if(in_escape == false && this->lexer_char() == '\\')
 		{
-		case '\\':
+			in_escape = true;
+			this->lexer_next_char();
+			if (this->lexer_char() != '-' && this->lexer_char() != ']')
+				error("Invalid escape character inside a character group."); // Which character!
+
+			continue;
+		}
+
+		if (!in_escape && this->lexer_char() == '-')
 		{
-			switch (c1)
+			in_range = true;
+		}
+		else if(in_range == true)
+		{
+			if(range_start == '\0')
+				error("Mismatched character group range '-'.");
+
+			if(this->lexer_char() == '-' && !in_escape)
+				error("Mismatched character group range '-'.");
+
+			// TODO: Error bad range?
+			const auto min = std::min(range_start, this->lexer_char());
+			const auto max = std::max(range_start, this->lexer_char());
+
+			for (size_t i = min; i <= max; ++i)
+				out.set(i);
+
+			range_start = '\0';
+			in_range = false;
+		}
+		else
+		{
+			range_start = this->lexer_char();
+			out.set(this->lexer_char());
+		}
+
+		this->lexer_next_char();
+		in_escape = false;
+	}
+
+	if (in_escape == true)
+		error("Mismatched escape \\ character.");
+
+	if (in_range == true)
+		error("Mismatched character group range '-'.");
+
+	this->lexer_next_char();
+
+	t = out;
+	return true;
+}
+
+bool regex_parser::lexer_char(regex_parser_token& t)
+{
+	t = charset{}.set(this->lexer_char());
+	this->lexer_next_char();
+	return true;
+}
+
+bool regex_parser::lexer_operator(regex_parser_token& t)
+{
+	switch (this->lexer_char())
+	{
+	case '?':
+		t = regex_parser_op::closure_zero_one;
+		break;
+	case '*':
+		t = regex_parser_op::closure_zero_more;
+		break;
+	case '+':
+		t = regex_parser_op::closure_one_more;
+		break;
+	case '(':
+		t = regex_parser_op::left_parenthesis;
+		break;
+	case ')':
+		t = regex_parser_op::right_parenthesis;
+		break;
+	case '|':
+		t = regex_parser_op::alternative;
+		break;
+	default:
+		return false;
+	}
+
+	this->lexer_next_char();
+	return true;
+}
+
+bool regex_parser::lexer_end(regex_parser_token& t)
+{
+	if (this->lexer_char() == '\0')
+	{
+		t = regex_end{};
+		this->lexer_next_char();
+		return true;
+	}
+
+	return false;
+}
+
+bool regex_parser::lexer_error(regex_parser_token& t)
+{
+	this->error("Unknown lexing symbol.");
+	return false;
+}
+
+char regex_parser::lexer_char() const noexcept
+{
+	return lexer_current_char_;
+}
+
+void regex_parser::lexer_next_char() noexcept
+{
+	lexer_current_char_pos_ += 1;
+	if (lexer_current_char_pos_ >= std::size(str_))
+		lexer_current_char_ = '\0';
+	else
+		lexer_current_char_ = str_[lexer_current_char_pos_];
+}
+
+void regex_parser::error(const char* error_string)
+{
+	assert(false);
+}
+
+#include <iostream>
+
+std::vector<regex_parser_token> regex_parser::compile_rpn()
+{
+	// Shunting yard algorithm to convert infix to postfix (RPN) notation REGEX
+	std::vector<regex_parser_token> output;
+	std::vector<regex_parser_token> operator_stack;
+
+	for(regex_parser_token t = token(); !std::holds_alternative<regex_end>(t); t = token())
+	{
+		std::visit([](auto v)
 			{
-			case '(':
-			case ')':
-			case '[':
-			case ']':
-			case '*':
-			case '+':
-			case '?':
-			case '-':
-			case '|':
-			case '\\':
-				return c1;
-			case 'n':
-				return '\n';
-			case 't':
-				return '\t';
-			case '0':
-				return '\0';
+				if constexpr (std::is_same_v<decltype(v), regex_parser_op>)
+				{
+					using enum regex_parser_op;
+					switch (v)
+					{
+					case closure_one_more:
+					case closure_zero_more:
+					case closure_zero_one:
+						std::cout << "*\n";
+						break;
+					case concatenation:
+						std::cout << "?\n";
+						break;
+					case alternative:
+						std::cout << "|\n";
+						break;
+					case left_parenthesis:
+						std::cout << "(\n";
+						break;
+					case right_parenthesis:
+						std::cout << ")\n";
+						break;
+					}
+				}
+				else
+				{
+					std::cout << typeid(v).name() << '\n';
+				}
+			}, t);
+
+		if(std::holds_alternative<charset>(t))
+		{
+			output.push_back(t);
+		}
+		else if(std::holds_alternative<regex_parser_op>(t) && std::get<regex_parser_op>(t) == regex_parser_op::left_parenthesis)
+		{
+			operator_stack.push_back(t);
+		}
+		else if(std::holds_alternative<regex_parser_op>(t) && std::get<regex_parser_op>(t) == regex_parser_op::right_parenthesis)
+		{
+			do
+			{
+				if(std::empty(operator_stack))
+				{
+					error("Mismatched parenthesis.");
+				}
+
+				auto op = operator_stack.back();
+				operator_stack.pop_back();
+
+				if(std::get<regex_parser_op>(op) == regex_parser_op::left_parenthesis)
+				{
+					break;
+				}
+
+				output.push_back(op);
+
+			} while (true);
+		}
+		else if(std::holds_alternative<regex_parser_op>(t))
+		{
+			while(!std::empty(operator_stack) && // stack is not empty
+				std::get<regex_parser_op>(operator_stack.back()) != regex_parser_op::left_parenthesis && // operator on the top of the stack is not left-parenthesis
+				regex_parser_op_priority(std::get<regex_parser_op>(operator_stack.back())) >= regex_parser_op_priority(std::get<regex_parser_op>(t)) // op has greater or equal precedence
+				)
+			{
+				// pop operator from the queue and push into output queue
+				output.push_back(operator_stack.back());
+				operator_stack.pop_back();
+			}
+
+			// push t to operator stack
+			operator_stack.push_back(t);
+		}
+	}
+
+	while (!std::empty(operator_stack))
+	{
+		auto op = operator_stack.back();
+		operator_stack.pop_back();
+
+		if (std::get<regex_parser_op>(op) == regex_parser_op::left_parenthesis)
+			error("Mismatched parenthesis.");
+
+		output.push_back(op);
+	}
+
+	return output;
+}
+
+regex_parser::nfa regex_parser::nfa_empty_expression()
+{
+	nfa out;
+	const auto start = out.insert();
+	const auto end = out.insert();
+	out.start() = start;
+	out.accept().insert(end);
+	out.connect(start, end);
+	return out;
+}
+
+regex_parser::nfa regex_parser::nfa_charset_expression(charset ch)
+{
+	nfa out;
+	const auto start = out.insert();
+	const auto end = out.insert();
+	out.start() = start;
+	out.accept().insert(end);
+	out.connect(start, end, ch);
+	return out;
+}
+
+regex_parser::nfa regex_parser::nfa_concatenation_expression(const nfa& lhs, const nfa& rhs)
+{
+	nfa out = lhs;
+	const auto map = out.insert(rhs);
+
+	// Update accepts
+	out.accept().clear();
+	for(auto e : rhs.accept())
+		out.accept().insert(map[e]);
+
+	// Stitch rhs start with lhs ends
+	const auto old_start = map[rhs.start()];
+	for(auto e : lhs.accept())
+		out.connect(e, old_start);
+
+	return out;
+}
+
+regex_parser::nfa regex_parser::nfa_union_expression(const nfa& lhs, const nfa& rhs)
+{
+	nfa out;
+	const auto start = out.insert();
+	const auto end = out.insert();
+	out.start() = start;
+	out.accept().insert(end);
+
+	// connect lhs and rhs
+	for(const auto r = { std::addressof(lhs), std::addressof(rhs) }; const auto ptr : r)
+	{
+		const auto& expr = *ptr;
+		const auto map = out.insert(expr);
+
+		out.connect(start, map[expr.start()]);
+		for (const auto e : expr.accept())
+			out.connect(map[e], end);
+	}
+
+	return out;
+}
+
+regex_parser::nfa regex_parser::nfa_closure_one_more_expression(const nfa& expr)
+{
+	nfa out = expr;
+
+	for(const auto e : out.accept())
+		out.connect(e, out.start());
+
+	return out;
+}
+
+regex_parser::nfa regex_parser::nfa_closure_zero_one_expression(const nfa& expr)
+{
+	nfa out = expr;
+
+	for (const auto e : out.accept())
+		out.connect(out.start(), e);
+	
+	return out;
+}
+
+regex_parser::nfa regex_parser::nfa_closure_zero_more_expression(const nfa& expr)
+{
+	nfa out = expr;
+
+	for (const auto e : out.accept())
+	{
+		out.connect(out.start(), e);
+		out.connect(e, out.start());
+	}
+
+	return out;
+}
+
+regex_parser::nfa regex_parser::compile_nfa(const std::vector<regex_parser_token>& rpn)
+{
+	std::vector<nfa> nfa_stack;
+	nfa_stack.reserve(2);
+
+	for(const auto& token : rpn)
+	{
+		if(std::holds_alternative<charset>(token))
+		{
+			nfa_stack.push_back(nfa_charset_expression(std::get<charset>(token)));
+		}
+		else if(std::holds_alternative<regex_parser_op>(token))
+		{
+			auto op = std::get<regex_parser_op>(token);
+
+			using enum regex_parser_op;
+			switch (op)
+			{
+			case alternative:
+			{
+				assert(std::size(nfa_stack) >= 2);
+				auto rhs = std::move(nfa_stack.back());
+				nfa_stack.pop_back();
+				auto lhs = std::move(nfa_stack.back());
+				nfa_stack.pop_back();
+				nfa_stack.push_back(nfa_union_expression(lhs, rhs));
+				break;
+			}
+			case concatenation:
+			{
+				assert(std::size(nfa_stack) >= 2);
+				auto rhs = std::move(nfa_stack.back());
+				nfa_stack.pop_back();
+				auto lhs = std::move(nfa_stack.back());
+				nfa_stack.pop_back();
+				nfa_stack.push_back(nfa_concatenation_expression(lhs, rhs));
+				break;
+			}
+			case closure_one_more:
+			{
+				assert(std::size(nfa_stack) >= 1);
+				auto expr = std::move(nfa_stack.back());
+				nfa_stack.pop_back();
+				nfa_stack.push_back(nfa_closure_one_more_expression(expr));
+				break;
+			}
+			case closure_zero_more:
+			{
+				assert(std::size(nfa_stack) >= 1);
+				auto expr = std::move(nfa_stack.back());
+				nfa_stack.pop_back();
+				nfa_stack.push_back(nfa_closure_zero_more_expression(expr));
+				break;
+			}
+			case closure_zero_one:
+			{
+				assert(std::size(nfa_stack) >= 1);
+				auto expr = std::move(nfa_stack.back());
+				nfa_stack.pop_back();
+				nfa_stack.push_back(nfa_closure_zero_one_expression(expr));
+				break;
+			}
 			default:
 				assert(false);
-				break;
-			}
-			break;
-		}
-		case '(':
-			return minimal ? '(' : l_parentheses;
-		case ')':
-			return minimal ? ')' : r_parentheses;
-		case '[':
-			return minimal ? '[' : l_brackets;
-		case ']':
-			return r_brackets;
-		case '*':
-			return minimal ? '*' : star;
-		case '+':
-			return minimal ? '+' : plus;
-		case '?':
-			return minimal ? '?' : question_mark;
-		case '|':
-			return minimal ? '?' : logic_or;
-		case '-':
-			return minimal ? dash : '-';
-		default:
-			return c0;
-		}
-
-		return '\0';
-	};
-
-	char c0 = lexer();
-	char c1 = lexer();
-	char c2 = lexer();
-
-	bool charset_state = false;
-	charset charset_set;
-
-	// Parse input
-	while(c0 != '\0')
-	{
-		if(!charset_state)
-		{
-			switch (c0)
-			{
-			case l_parentheses:
-				push_production();
-				break;
-			case r_parentheses:
-				pop_production();
-				break;
-			case star:
-			case plus:
-			case question_mark:
-			{
-				const regex_productions::production_token
-					token = current_rule().back();
-
-				current_rule().pop_back();
-				push_production();
-
-				if (c0 == star) // zero or more
-				{
-					// A -> XA |
-					append(token);
-					append(production_stack.back());
-					new_production_rule();
-				}
-				else if (c0 == question_mark)
-				{
-					// A -> X | 
-					append(token);
-					new_production_rule();
-				}
-				else if (c0 == plus)
-				{
-					// A -> XA | X
-					append(token);
-					append(production_stack.back());
-					new_production_rule();
-					append(token);
-				}
-			}
-			case l_brackets:
-				charset_state = true;
-				charset_set.reset();
-				break;
-			default:
-				append(c0);
 				break;
 			}
 		}
 		else
 		{
-			if(c0 == r_brackets)
-			{
-				append(charset_set);
-				charset_state = false;
-			}
-			else
-			{
-				if (c1 == dash)
-				{
-					assert(c0 >= 0 && c2 >= 0);
-					assert(c2 != r_brackets && "Mismatched char range");
-
-					for (auto j = static_cast<size_t>(c0); j <= static_cast<size_t>(c2); ++j)
-						charset_set.set(j);
-
-					c0 = c1;
-					c1 = lexer(true);
-					c2 = lexer(true);
-				}
-				else
-				{
-					charset_set.set(c0);
-				}
-			}
-			
+			assert(false);
 		}
-
-		// Shift lookups
-		c0 = c1; c1 = c2; c2 = lexer(charset_state);
 	}
 
-	assert(charset_state == false && std::size(production_stack) == 1);
+	assert(std::size(nfa_stack) == 1);
 
-	this->populate_first_sets(out);
-	return out;
+	return nfa_stack[0];
+}
+
+void regex_parser::compile()
+{
+	const auto rpn_regex = this->compile_rpn();
+	auto nfa = this->compile_nfa(rpn_regex);
+	bool f = true;
+}
+
+
+fox_cc::lex_compiler::regex_productions fox_cc::lex_compiler::generate_production(std::string_view regex)
+{
+	regex_parser rp(regex);
+	
+	rp.compile();
+
+	return {};
 }
 
 void fox_cc::lex_compiler::populate_first_sets(regex_productions& prods)
 {
-	prods.firsts_sets.resize(prods.productions.end()->first);
 
 }
