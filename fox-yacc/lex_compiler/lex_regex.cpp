@@ -5,6 +5,7 @@
 #include <functional>
 
 #include <regex_compiler/regex_compiler.hpp>
+#include <automata/dfa.hpp>
 
 #include "lex_compiler.hpp"
 
@@ -14,6 +15,8 @@ fox_cc::lex_compiler::regex_productions fox_cc::lex_compiler::generate_productio
 {
 	regex_compiler::regex_parser rgx(regex);
 	auto nfa = rgx.compile();
+
+	auto dfa = automata::construct_dfa(nfa);
 
 	return {};
 }

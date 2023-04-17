@@ -177,7 +177,7 @@ fox_cc::regex_compiler::regex_parser::nfa fox_cc::regex_compiler::regex_parser::
 {
 	const auto rpn_regex = this->compile_rpn();
 	auto nfa = this->compile_nfa(rpn_regex);
-	nfa.optimize();
+
 
 	return nfa;
 }

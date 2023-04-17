@@ -85,7 +85,7 @@ namespace fox_cc
 			std::vector<regex_parser_token> compile_rpn();
 
 		private:
-			using nfa = fox_cc::automata::nfa<automata::empty_state, charset>;
+			using nfa = fox_cc::automata::nfa<automata::empty_state, size_t, charset>;
 
 			[[nodiscard]] static nfa nfa_empty_expression();
 			[[nodiscard]] static nfa nfa_charset_expression(charset ch);
