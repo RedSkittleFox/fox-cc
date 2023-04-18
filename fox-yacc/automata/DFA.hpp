@@ -31,7 +31,14 @@ namespace fox_cc
 			class Edge,
 			class EdgeTraits = ::fox_cc::automata::edge_traits<Edge>
 		>
-		dfa<Value, Reduce, Edge, EdgeTraits> construct_dfa(const nfa<Value, Reduce, Edge, EdgeTraits>& nfa)
+		dfa<Value, Reduce, Edge, EdgeTraits> construct_dfa(const nfa<Value, Reduce, Edge, EdgeTraits>& nfa, 
+			std::invocable<const Reduce&, const Reduce&> auto&& reduce_conflict_resolver,
+			std::invocable<const Value&, const Value&> auto&& value_merge_conflict_resolver
+			)
+		requires
+			std::is_invocable_r_v<Reduce, decltype(reduce_conflict_resolver), const Reduce&, const Reduce&>
+		&&
+			std::is_invocable_r_v<Value, decltype(value_merge_conflict_resolver), const Value&, const Value&>
 		{
 			for(size_t i = 0; i < nfa.size(); ++i)
 			{
@@ -156,13 +163,36 @@ namespace fox_cc
 							assert(new_state_id == out.size() - 1);
 							from_transition_states[closurefied_states] = new_state_id;
 							to_transition_states[new_state_id] = closurefied_states;
+
+							const auto& nfa_state = nfa[*states.begin()];
+
+							// Resolve reduction and value
+							std::optional<Reduce> reduce = nfa_state.reduce();
+							Value value = nfa_state.value();
+
+							for(auto& nfa_state_id : states | std::views::drop(1))
+							{
+								const auto& nfa_state = nfa[nfa_state_id];
+
+								if(nfa_state.reduce())
+								{
+									if(reduce)
+									{
+										reduce = reduce_conflict_resolver(nfa_state.reduce().value(), reduce.value());
+									}
+									reduce = nfa_state.reduce();
+								}
+
+								value = value_merge_conflict_resolver(value, nfa_state.value());
+							}
+
+							out[new_state_id].reduce() = std::move(reduce);
+							out[new_state_id].value() = std::move(value);
 						}
 						else
 						{
 							new_state_id = r->second;
 						}
-
-						// TODO: Resolve reduce-reduce conflict
 
 						// Add edge from s
 						out.connect(i, new_state_id, e);
@@ -183,6 +213,18 @@ namespace fox_cc
 			}
 
 			return out;
+		}
+
+		template
+		<
+			class Value,
+			class Reduce,
+			class Edge,
+			class EdgeTraits = ::fox_cc::automata::edge_traits<Edge>
+		>
+		dfa<Value, Reduce, Edge, EdgeTraits> construct_dfa(const nfa<Value, Reduce, Edge, EdgeTraits>& nfa)
+		{
+			return construct_dfa<Value, Reduce, Edge, EdgeTraits>(nfa, [](const Reduce& lhs, const Reduce& rhs) -> Reduce { return std::min(lhs, rhs); }, [](const Value& lhs, const Value& rhs) -> Value { return lhs; });
 		}
 	}
 }

@@ -87,6 +87,17 @@ namespace fox_cc
 				{
 					return state_id_;
 				}
+
+			public:
+				[[nodiscard]] std::optional<Reduce>& reduce() noexcept
+				{
+					return reduce_;
+				}
+
+				[[nodiscard]] const std::optional<Reduce>& reduce() const noexcept
+				{
+					return reduce_;
+				}
 			};
 
 		private:

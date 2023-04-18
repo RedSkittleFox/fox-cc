@@ -28,7 +28,6 @@ namespace fox_cc
 				std::set<Edge> set(std::begin(edges), std::end(edges));
 				return std::vector<Edge>(std::begin(set), std::end(set));
 			}
-
 		};
 
 		template<size_t N>
