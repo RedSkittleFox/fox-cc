@@ -10,8 +10,8 @@
 #include <iostream>
 #include <ranges>
 
-#include "../parser/parser.hpp"
-#include "compiler_types.hpp"
+#include <internal_parser/parser.hpp>
+#include <parser_compiler/compiler_types.hpp>
 
 namespace cmp
 {

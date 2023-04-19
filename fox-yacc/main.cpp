@@ -2,10 +2,10 @@
 #include <fstream>
 #include <string>
 
-#include "parser/lexer.hpp"
-#include "parser/parser.hpp"
-#include "compiler/compiler.hpp"
-#include "lex_compiler/lex_compiler.hpp"
+#include <internal_parser/lexer.hpp>
+#include <internal_parser/parser.hpp>
+#include <parser_compiler/compiler.hpp>
+#include <lex_compiler/lex_compiler.hpp>
 
 int main()
 {
@@ -21,9 +21,8 @@ int main()
 	ps.parse();
 	auto ast = ps.ast();
 
-	fox_cc::lex_compiler lex_cmp;
-	lex_cmp.compile(ast);
-
+	fox_cc::lex_compiler lex_cmp(ast);
+	auto& lex_compiler_result = lex_cmp.result();
 	// cmp::compiler cp(ast);
 	// cp.compile();
 

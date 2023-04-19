@@ -126,30 +126,33 @@ namespace fox_cc
 					// Create edges and states
 					for(const auto& e : edges)
 					{
-						// compute states we can go to by the edge e
-						std::set<size_t> states;
-
-						for (
-							const auto& to_states = to_transition_states[i];
-							auto state : to_states
-							)
-						{
-							for (const auto& [edge, next_state] : nfa[state].next())
-							{
-								if (edge == edge_traits::epsilon())
-									continue;
-
-								if (!edge_traits::empty_intersection(edge, e))
-									states.insert(next_state);
-							}
-						}
-
-						// compute epsilon closure set of states
 						std::set<size_t> closurefied_states;
-						for(auto state : states)
 						{
-							closurefied_states.insert(state);
-							closurefied_states.insert_range(epsilon_closure_sets[state]);
+							// compute states we can go to by the edge e
+							std::set<size_t> states;
+
+							for (
+								const auto& to_states = to_transition_states[i];
+								auto state : to_states
+								)
+							{
+								for (const auto& [edge, next_state] : nfa[state].next())
+								{
+									if (edge == edge_traits::epsilon())
+										continue;
+
+									if (!edge_traits::empty_intersection(edge, e))
+										states.insert(next_state);
+								}
+							}
+
+							// compute epsilon closure set of states
+							
+							for (auto state : states)
+							{
+								closurefied_states.insert(state);
+								closurefied_states.insert_range(epsilon_closure_sets[state]);
+							}
 						}
 
 						size_t new_state_id;
@@ -164,13 +167,13 @@ namespace fox_cc
 							from_transition_states[closurefied_states] = new_state_id;
 							to_transition_states[new_state_id] = closurefied_states;
 
-							const auto& nfa_state = nfa[*states.begin()];
+							const auto& nfa_state = nfa[*closurefied_states.begin()];
 
 							// Resolve reduction and value
 							std::optional<Reduce> reduce = nfa_state.reduce();
 							Value value = nfa_state.value();
 
-							for(auto& nfa_state_id : states | std::views::drop(1))
+							for(auto& nfa_state_id : closurefied_states | std::views::drop(1))
 							{
 								const auto& nfa_state = nfa[nfa_state_id];
 

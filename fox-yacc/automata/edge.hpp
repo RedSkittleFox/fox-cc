@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bitset>
+#include <ranges>
 
 namespace fox_cc
 {
@@ -65,7 +66,7 @@ namespace fox_cc
 				}
 
 				return edge_groups_to_bitsets
-					| std::views::filter([](auto& p) -> bool {return !std::empty(p.first); })
+					| std::views::filter([](auto& p) -> bool { return !std::empty(p.first); })
 					| std::views::values
 					| std::ranges::to<std::vector<std::bitset<N>>>();
 			}
