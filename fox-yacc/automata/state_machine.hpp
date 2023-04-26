@@ -211,7 +211,7 @@ namespace fox_cc
 			[[nodiscard]] size_t insert(const Value& value) requires (UseValue)
 			{
 				states_.emplace_back();
-				states_.back().value_ = value;
+				states_.back().value() = value;
 				return states_.back().state_id_ = std::size(states_) - 1;
 			}
 
@@ -264,7 +264,7 @@ namespace fox_cc
 
 				if constexpr(IsDeterministic)
 				{
-					for(auto e : from.next() | std::views::values)
+					for(auto e : from.next() | std::views::keys)
 					{
 						assert(EdgeTraits::empty_intersection(e, edge) == true);
 					}

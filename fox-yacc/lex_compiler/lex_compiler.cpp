@@ -4,6 +4,12 @@
 fox_cc::lex_compiler::lex_compiler(const prs::yacc_ast& ast)
 	: ast_(ast)
 {
+	this->result_.terminals.emplace_back(
+		"null-terminator",
+		"",
+		lex_compiler_result::associativity::token
+	);
+
 	automata::nfa<automata::empty_state, size_t, charset> nfa;
 	// Create start state for the nfa
 	nfa.start() = nfa.insert();
