@@ -16,9 +16,9 @@ fox_cc::lex_compiler::lex_compiler(const prs::yacc_ast& ast)
 
 	std::map<std::string, size_t, std::less<>> token_id;
 
-	for (size_t i = 0; i < std::size(ast_.token_definitions); ++i)
+	for (size_t i = 1; i <= std::size(ast_.token_definitions); ++i)
 	{
-		auto& token = ast_.token_definitions[i];
+		auto& token = ast_.token_definitions[i - 1];
 
 		auto r = token_id.find(token.name.info->string_value);
 		if (r != std::end(token_id))

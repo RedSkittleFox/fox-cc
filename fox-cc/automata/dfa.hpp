@@ -46,7 +46,30 @@ namespace fox_cc
 
 				for(auto to : nfa[i].next())
 				{
-					std::cout << "\t" << to.second << " | " << to.first << '\n';
+					if constexpr(std::is_same_v<const std::bitset<128>, decltype(to.first)>)
+					{
+						std::cout << "\t" << to.second << " | ";
+						if(to.first.all())
+						{
+							std::cout << "EPSILON";
+						}
+						else
+						{
+							for (size_t i = 0; i < 128; ++i)
+							{
+								if (to.first.test(i))
+								{
+									std::cout << static_cast<char>(i) << ' ';
+								}
+							}
+						}
+						
+						std::cout << '\n';
+					}
+					else
+					{
+						std::cout << "\t" << to.second << " | " << to.first << '\n';
+					}
 				}
 			}
 			
@@ -211,7 +234,30 @@ namespace fox_cc
 
 				for (auto to : out[i].next())
 				{
-					std::cout << "\t" << to.second << " | " << to.first << '\n';
+					if constexpr (std::is_same_v<const std::bitset<128>, decltype(to.first)>)
+					{
+						std::cout << "\t" << to.second << " | ";
+						if (to.first.all())
+						{
+							std::cout << "EPSILON";
+						}
+						else
+						{
+							for (size_t i = 0; i < 128; ++i)
+							{
+								if (to.first.test(i))
+								{
+									std::cout << static_cast<char>(i) << ' ';
+								}
+							}
+						}
+
+						std::cout << '\n';
+					}
+					else
+					{
+						std::cout << "\t" << to.second << " | " << to.first << '\n';
+					}
 				}
 			}
 

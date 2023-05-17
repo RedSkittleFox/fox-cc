@@ -27,4 +27,7 @@ else()
     message(STATUS "IPO / LTO supported.")
 endif()
 
-add_subdirectory("fox-yacc")
+include(FetchContent)
+
+add_subdirectory("fox-cc")
+add_subdirectory("fox-cc-demo")

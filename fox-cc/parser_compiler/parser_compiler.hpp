@@ -108,6 +108,40 @@ namespace fox_cc
 				{
 					return lhs.productions == rhs.productions;
 				}
+
+				enum class action
+				{
+					shift,
+					reduce,
+					accept
+				};
+
+				struct action_t
+				{
+					action action;
+					union
+					{
+						size_t state;
+						
+					};
+				};
+
+				struct action_accept {};
+
+				struct action_reduce
+				{
+					size_t production_id;
+					size_t pop_count;
+					size_t push_state;
+				};
+
+				struct action_shift
+				{
+					size_t production_id;
+					size_t goto_state;
+				};
+
+				std::unordered_map<size_t, std::variant<action_accept, action_reduce, action_shift>> action_table;
 			};
 
 			std::vector<token> tokens;
@@ -149,10 +183,16 @@ namespace fox_cc
 		void populate_state(parser_compiler_result::state_data& state);
 		bool insert_production(parser_compiler_result::state_data& state, size_t production_id, std::set<size_t> follow_set);
 
+		void compute_actions();
+
 	private:
 		[[nodiscard]] parser_compiler_result::token_id token_by_name(const std::string& name) const noexcept;
 		[[nodiscard]] const std::set<parser_compiler_result::token_id>& first_set(parser_compiler_result::token_id id) const noexcept;
 		[[nodiscard]] std::set<parser_compiler_result::token_id>& first_set(parser_compiler_result::token_id id) noexcept;
 		void error(const char* msg);
+
+	private:
+		bool reduce_reduce_conflict(size_t node, size_t lhs_prod, size_t rhs_prod);
+		bool shift_reduce_conflict(size_t node, size_t lhs_prod, size_t rhs_prod);
 	};
 }

@@ -9,6 +9,7 @@ fox_cc::parser_compiler::parser_compiler(const lex_compiler::lex_compiler_result
 	generate_first_sets();
 	init_first_state();
 	init_states();
+	compute_actions();
 }
 
 void fox_cc::parser_compiler::init_terminals()
@@ -275,6 +276,92 @@ bool fox_cc::parser_compiler::insert_production(parser_compiler_result::state_da
 
 }
 
+void fox_cc::parser_compiler::compute_actions()
+{
+	for(auto& s : result_.dfa)
+	{
+		std::unordered_map<size_t, size_t> action_subproductions; // used for debug information
+
+		auto& v = s.value();
+		auto try_insert = [&](size_t token, auto action, size_t subprod)
+		{
+			auto r = v.action_table.find(token);
+
+			using variant_t = typename decltype(v.action_table)::mapped_type;
+
+			bool ovrd = true;
+			if(r != std::end(v.action_table))
+			{
+				ovrd = false;
+
+				if constexpr (std::is_same_v<parser_compiler_result::state_data::action_reduce, decltype(action)>)
+				{
+					if(std::holds_alternative<parser_compiler_result::state_data::action_reduce>(r->second))
+					{
+						ovrd = reduce_reduce_conflict(s.state_id(), action_subproductions.at(token), subprod);
+					}
+					else if (std::holds_alternative<parser_compiler_result::state_data::action_shift>(r->second))
+					{
+						ovrd = shift_reduce_conflict(s.state_id(), action_subproductions.at(token), subprod);
+					}
+				}
+				else
+				{
+					if (std::holds_alternative<parser_compiler_result::state_data::action_reduce>(r->second))
+					{
+						ovrd = !reduce_reduce_conflict(s.state_id(), subprod, action_subproductions.at(token));
+					}
+					else if (std::holds_alternative<parser_compiler_result::state_data::action_shift>(r->second))
+					{
+						if(
+							std::get<parser_compiler_result::state_data::action_shift>(r->second).goto_state != 
+							action.goto_state
+							)
+						{
+							assert(false && "Shift shift conflict??");
+						}
+					}
+				}
+			}
+
+			if(ovrd)
+			{
+				action_subproductions[token] = subprod;
+				v.action_table.insert_or_assign(token, variant_t{ action });
+			}
+		};
+
+		for(size_t i = 0; i < std::size(v.productions); ++i)
+		{
+			const auto& prod = v.productions[i];
+			const auto& source_production = result_.tokens[prod.non_terminal].non_terminal().productions[prod.non_terminal_production];
+
+			if(prod.current == std::size(source_production))
+			{
+				auto action = parser_compiler_result::state_data::action_reduce{
+					prod.non_terminal,
+					std::size(source_production),
+					prod.non_terminal
+				};
+
+				for(auto follow : prod.follow_set)
+				{
+					try_insert(follow, action, i);
+				}
+			}
+			else 
+			{
+				auto action = parser_compiler_result::state_data::action_shift{
+					prod.non_terminal,
+					s.next().at(source_production[prod.current])
+				};
+
+				try_insert(source_production[prod.current], action, i);
+			}
+		}
+	}
+}
+
 fox_cc::parser_compiler::parser_compiler_result::token_id fox_cc::parser_compiler::token_by_name(const std::string& name) const noexcept
 {
 	for(size_t i = 0; const auto& v : result_.tokens)
@@ -303,4 +390,20 @@ std::set<fox_cc::parser_compiler::parser_compiler_result::token_id>& fox_cc::par
 void fox_cc::parser_compiler::error(const char* msg)
 {
 	assert(false && msg);
+}
+
+bool fox_cc::parser_compiler::reduce_reduce_conflict(size_t node, size_t lhs_prod, size_t rhs_prod)
+{
+	auto& state = result_.dfa[node];
+	const auto& lhs = state.value().productions[lhs_prod];
+	const auto& rhs = state.value().productions[rhs_prod];
+	return lhs.non_terminal < rhs.non_terminal;
+}
+
+bool fox_cc::parser_compiler::shift_reduce_conflict(size_t node, size_t lhs_prod, size_t rhs_prod)
+{
+	auto& state = result_.dfa[node];
+	const auto& lhs = state.value().productions[lhs_prod];
+	const auto& rhs = state.value().productions[rhs_prod];
+	return lhs.non_terminal < rhs.non_terminal;
 }

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <fox_cc.hpp>
 #include <internal_parser/yacc_ast.hpp>
 
 #include <bitset>
