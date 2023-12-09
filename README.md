@@ -6,7 +6,7 @@ Features:
 * Built-in regex-based lexer
 * YACC-like grammar syntax
 * LALR1 parser generator
-* Output in DOT format
+* Output in a DOT format
 
 This project has been discontinued. 
 
