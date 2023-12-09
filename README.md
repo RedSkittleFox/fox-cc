@@ -125,7 +125,7 @@ start
 %%
 ```
 
-[LALR1 state machine](graphviz_example.svg)
+![LALR1 state machine](graphviz_example.svg)
 
 # TODO
 * Enable manual RR and SR conflict resolution.
