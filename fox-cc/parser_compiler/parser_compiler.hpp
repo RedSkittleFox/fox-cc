@@ -31,6 +31,7 @@ namespace fox_cc
 				token_id id;
 				std::string name;
 				std::vector<std::vector<size_t>> productions;
+				std::vector<std::string> production_actions;
 			};
 
 			struct token : std::variant<terminal, non_terminal>
@@ -126,7 +127,10 @@ namespace fox_cc
 					};
 				};
 
-				struct action_accept {};
+				struct action_accept
+				{
+					size_t goto_state;
+				};
 
 				struct action_reduce
 				{

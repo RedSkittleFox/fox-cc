@@ -55,17 +55,33 @@ void fox_cc::parser_compiler::init_non_terminals()
 		for(const auto& rule : ast_production.rules)
 		{
 			auto& prod = production.productions.emplace_back();
+			auto& prod_action = production.production_actions.emplace_back();
 
-			for(const auto& token : rule)
+			for(std::size_t j = 0; j < std::size(rule); ++j)
 			{
-				auto token_id = token_by_name(std::string(token.info->string_value));
+				const auto& token = rule[j];
 
-				if(token_id == parser_compiler_result::token_id_npos)
+				if (token.value == prs::token::C_ACTION)
 				{
-					error("Unknown token in production");
-				}
+					// Ignore mid-rule actions...
+					if(j + 1 != std::size(rule))
+					{
+						error("Mid-rule actions are not supported.");
+					}
 
-				prod.push_back(token_id);
+					prod_action = static_cast<std::string>(token.info->string_value);
+				}
+				else
+				{
+					auto token_id = token_by_name(std::string(token.info->string_value));
+
+					if (token_id == parser_compiler_result::token_id_npos)
+					{
+						error("Unknown token in production");
+					}
+
+					prod.push_back(token_id);
+				}
 			}
 
 			prod.shrink_to_fit();
@@ -338,15 +354,27 @@ void fox_cc::parser_compiler::compute_actions()
 
 			if(prod.current == std::size(source_production))
 			{
-				auto action = parser_compiler_result::state_data::action_reduce{
-					prod.non_terminal,
-					std::size(source_production),
-					prod.non_terminal
-				};
-
-				for(auto follow : prod.follow_set)
+				if(prod.non_terminal_production == 0 && false)
 				{
-					try_insert(follow, action, i);
+					auto action = parser_compiler_result::state_data::action_accept{};
+
+					for(auto follow : prod.follow_set)
+					{
+						try_insert(follow, action, i);
+					}
+				}
+				else
+				{
+					auto action = parser_compiler_result::state_data::action_reduce{
+						prod.non_terminal,
+						std::size(source_production),
+						prod.non_terminal
+					};
+
+					for (auto follow : prod.follow_set)
+					{
+						try_insert(follow, action, i);
+					}
 				}
 			}
 			else 

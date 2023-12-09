@@ -58,10 +58,7 @@ namespace prs
 
 		void parse_def();
 		void parse_def_start();
-		void parse_def_variant();
 		void parse_def_token();
-		void parse_def_type();
-		void parse_def_c_decl();
 
 		void parse_prod();
 

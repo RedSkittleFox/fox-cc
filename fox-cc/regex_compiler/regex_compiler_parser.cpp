@@ -28,6 +28,7 @@ std::vector<fox_cc::regex_compiler::regex_parser::regex_parser_token> fox_cc::re
 
 	for (regex_parser_token t = token(); !std::holds_alternative<regex_parser_token_end>(t); t = token())
 	{
+		/*
 		std::visit([](auto v)
 			{
 				if constexpr (std::is_same_v<decltype(v), regex_parser_op>)
@@ -53,6 +54,7 @@ std::vector<fox_cc::regex_compiler::regex_parser::regex_parser_token> fox_cc::re
 					std::cout << typeid(v).name() << '\n';
 				}
 			}, t);
+		*/
 
 		if (std::holds_alternative<charset>(t))
 		{

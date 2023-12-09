@@ -31,15 +31,18 @@ namespace fox_cc
 			class Edge,
 			class EdgeTraits = ::fox_cc::automata::edge_traits<Edge>
 		>
-		dfa<Value, Reduce, Edge, EdgeTraits> construct_dfa(const nfa<Value, Reduce, Edge, EdgeTraits>& nfa, 
+		dfa<Value, Reduce, Edge, EdgeTraits> construct_dfa
+		(
+			const nfa<Value, Reduce, Edge, EdgeTraits>& nfa, 
 			std::invocable<const Reduce&, const Reduce&> auto&& reduce_conflict_resolver,
 			std::invocable<const Value&, const Value&> auto&& value_merge_conflict_resolver
-			)
+		)
 		requires
 			std::is_invocable_r_v<Reduce, decltype(reduce_conflict_resolver), const Reduce&, const Reduce&>
 		&&
 			std::is_invocable_r_v<Value, decltype(value_merge_conflict_resolver), const Value&, const Value&>
 		{
+#if 0
 			for(size_t i = 0; i < nfa.size(); ++i)
 			{
 				std::cout << i << '\n';
@@ -72,7 +75,7 @@ namespace fox_cc
 					}
 				}
 			}
-			
+#endif
 			// Uses power-set algorithm to convert NFA to DFA
 			dfa<Value, Reduce, Edge, EdgeTraits> out;
 
@@ -222,41 +225,6 @@ namespace fox_cc
 
 						// Add edge from s
 						out.connect(i, new_state_id, e);
-					}
-				}
-			}
-
-			std::cout << "============\n";
-
-			for (size_t i = 0; i < out.size(); ++i)
-			{
-				std::cout << i << '\n';
-
-				for (auto to : out[i].next())
-				{
-					if constexpr (std::is_same_v<const std::bitset<128>, decltype(to.first)>)
-					{
-						std::cout << "\t" << to.second << " | ";
-						if (to.first.all())
-						{
-							std::cout << "EPSILON";
-						}
-						else
-						{
-							for (size_t i = 0; i < 128; ++i)
-							{
-								if (to.first.test(i))
-								{
-									std::cout << static_cast<char>(i) << ' ';
-								}
-							}
-						}
-
-						std::cout << '\n';
-					}
-					else
-					{
-						std::cout << "\t" << to.second << " | " << to.first << '\n';
 					}
 				}
 			}

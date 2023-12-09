@@ -292,9 +292,10 @@ bool prs::lexer::interpret_tag(token_entry& entry)
 	if (c() != '<')
 		return pop_state();
 
+	this->marker_forward();
 	consume_space();
 
-	if (!std::isalpha(c()))
+	if (!std::isdigit(c()))
 		return pop_state();
 
 	const char* tag_start = std::data(input_) + current_;
@@ -303,7 +304,7 @@ bool prs::lexer::interpret_tag(token_entry& entry)
 
 	while (in_range())
 	{
-		if (std::isalnum(c()) || c() == '_')
+		if (std::isdigit(c()))
 		{
 			this->marker_forward();
 			tag_size += 1;
@@ -352,7 +353,14 @@ bool prs::lexer::interpret_c_action(token_entry& entry)
 	}
 
 	this->marker_forward();
-	return build_token_entry(token::C_ACTION, entry);
+	build_token_entry(token::C_ACTION, entry);
+
+	auto& sv = entry.info->string_value;
+	sv.remove_prefix(1);
+	sv.remove_suffix(1);
+	sv.remove_prefix(std::min(sv.find_first_not_of(" \t"), sv.size()));
+	sv.remove_suffix(std::min(sv.size() - sv.find_last_not_of(" \t") - 1, sv.size()));
+	return true;
 }
 
 bool prs::lexer::interpret_colon(token_entry& entry)

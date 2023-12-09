@@ -4,6 +4,8 @@
 #include <string>
 #include <cassert>
 #include <bitset>
+#include <functional>
+#include <sstream>
 
 #include <internal_parser/lexer.hpp>
 #include <internal_parser/parser.hpp>
@@ -81,31 +83,34 @@ namespace fox_cc
 		}
 	};
 
-	class ast
+	struct ast
 	{
-		class ast_node
+		struct terminal
 		{
-			union child_t
-			{
-				ast_node* ptr;
-				size_t offset;
-			};
-
-			std::string_view type_;
-			std::string_view value_;
-			std::vector<child_t> children_;
-		public:
-
+			std::string type;
+			std::string value;
 		};
 
-		std::vector<std::string> vector_;
-		std::vector<ast_node> ast_nodes_;
+		class ast_node
+		{
+			std::vector<std::variant<ast_node, terminal>> children;
+		};
+
+		ast_node root;
 	};
 
 	class compiler
 	{
 		lex_compiler::lex_compiler_result lexer_;
 		parser_compiler::parser_compiler_result parser_;
+
+		std::unordered_map<std::string, std::function<std::string(std::span<std::string>)>> actions_;
+
+	public:
+		void register_action(const std::string& name, const std::function<std::string(std::span<std::string>)>& func)
+		{
+			actions_[name] = func;
+		}
 
 	public:
 		compiler() = delete;
@@ -148,6 +153,12 @@ namespace fox_cc
 			lexer_ = lex_cmp.result();
 			fox_cc::parser_compiler prs_cmp(lexer_, ast);
 			parser_ = prs_cmp.result();
+		}
+
+	public:
+		[[nodiscard]] std::string parser_to_string() const
+		{
+			std::stringstream ss;
 
 			auto& result = parser_;
 
@@ -155,50 +166,153 @@ namespace fox_cc
 			{
 				auto& state = result.dfa[i];
 
-				std::cout << "===== " << i << "=====\n";
+				ss << "===== " << i << "=====\n";
 
 				for (auto prod : state.value().productions)
 				{
 					auto& nt = result.tokens[prod.non_terminal].non_terminal();
 
-					std::cout << nt.name << " -> ";
+					ss << nt.name << " -> ";
 
 					auto& sub_prod = nt.productions[prod.non_terminal_production];
 
 					for (size_t i = 0; i <= sub_prod.size(); ++i)
 					{
 						if (i == prod.current)
-							std::cout << ". ";
+							ss << ". ";
 
 						if (i < sub_prod.size())
-							std::cout << result.tokens[sub_prod[i]].name() << " ";
+							ss << result.tokens[sub_prod[i]].name() << " ";
 					}
 
-					std::cout << " [ ";
+					ss << " [ ";
 					for (auto follow : prod.follow_set)
-						std::cout << result.tokens[follow].name() << ' ';
-					std::cout << "]\n";
+						ss << result.tokens[follow].name() << ' ';
+					ss << "]\n";
 
 				}
 
-				std::cout << "\n";
+				ss << "\n";
 
 				for (auto go_to : state.next())
 				{
-					std::cout << result.tokens[go_to.first].name() << " : " << go_to.second << '\n';
+					ss << result.tokens[go_to.first].name() << " : " << go_to.second << '\n';
 				}
 
-				std::cout << "\n";
+				ss << "\n";
 			}
+
+			return ss.str();
+		}
+
+		[[nodiscard]] std::string lexer_to_string() const
+		{
+			std::stringstream ss;
+
+			auto& out = lexer_.dfa;
+
+			ss << "============\n";
+
+			for (size_t i = 0; i < out.size(); ++i)
+			{
+				ss << i << '\n';
+
+				for (auto to : out[i].next())
+				{
+					if constexpr (std::is_same_v<const std::bitset<128>, decltype(to.first)>)
+					{
+						ss << "\t" << to.second << " | ";
+						if (to.first.all())
+						{
+							ss << "EPSILON";
+						}
+						else
+						{
+							for (size_t i = 0; i < 128; ++i)
+							{
+								if (to.first.test(i))
+								{
+									ss << static_cast<char>(i) << ' ';
+								}
+							}
+						}
+
+						ss << '\n';
+					}
+					else
+					{
+						ss << "\t" << to.second << " | " << to.first << '\n';
+					}
+				}
+			}
+
+			return ss.str();
+		}
+
+		[[nodiscard]] std::string dot_to_string() const 
+		{
+			std::stringstream ss;
+
+			auto& cmp = *this;
+			auto& result = cmp.parser();
+			ss << "digraph G {\n";
+			for (size_t i = 0; i < result.dfa.size(); ++i)
+			{
+				auto& state = result.dfa[i];
+				ss << i << " [ label = \"";
+				ss << i << "\n";
+				for (auto prod : state.value().productions)
+				{
+					auto& nt = result.tokens[prod.non_terminal].non_terminal();
+
+					ss << nt.name << " -> ";
+
+					auto& sub_prod = nt.productions[prod.non_terminal_production];
+
+					for (size_t i = 0; i <= sub_prod.size(); ++i)
+					{
+						if (i == prod.current)
+							ss << ". ";
+
+						if (i < sub_prod.size())
+							ss << result.tokens[sub_prod[i]].name() << " ";
+					}
+
+					ss << " ( ";
+					for (auto follow : prod.follow_set)
+						ss << result.tokens[follow].name() << ' ';
+					ss << ")\n";
+
+				}
+				ss << "\"];\n";
+
+				for (auto go_to : state.next())
+				{
+					ss << i << " -> " << go_to.second << "[label=\"" << result.tokens[go_to.first].name() << " : " << go_to.first << "\"];\n";
+				}
+
+				ss << "\n";
+			}
+
+			ss << "}\n";
+
+			return ss.str();
 		}
 
 	public:
-		[[nodiscard]] ast compile(std::string_view input) const
+		[[nodiscard]] std::string compile(std::string_view input) const
+		{
+			std::stringstream ss;
+			return compile(input, ss);
+		}
+
+		[[nodiscard]] std::string compile(std::string_view input, std::ostream& os) const
 		{
 			// TODO: Else
 			assert(std::size(input) >= 2);
 
-			
+			ast out;
+
 			char c0 = 0, c1 = input[0];
 
 			auto& lexer = lexer_.dfa;
@@ -211,17 +325,16 @@ namespace fox_cc
 
 			size_t token_start = 0;
 
+			std::vector<ast::terminal> lexer_tokens;
+
+			os << "node [symbol] node [symbol] ...\n";
+
 			auto lexer_function = [&, lexer_i = static_cast<size_t>(0)](size_t& out_start, size_t& out_end) mutable -> size_t
 			{
-				for (; lexer_i < std::size(input); ++lexer_i)
+				std::size_t ts = lexer_i;
+				for (; lexer_i <= std::size(input); ++lexer_i)
 				{
-					if (lexer_i == std::size(input))
-					{
-						out_start = out_end = std::size(input);
-						return 0;
-					}
-
-					c0 = input[lexer_i];
+					c0 = (lexer_i < std::size(input)) ? input[lexer_i] : 0;
 					c1 = (lexer_i + 1 < std::size(input)) ? input[lexer_i + 1] : 0;
 
 					auto& node = lexer[current_lexer_node];
@@ -230,13 +343,18 @@ namespace fox_cc
 					{
 						if (potential_reduce_i == lexer_i) // Reduce
 						{
+							lexer_tokens.push_back(
+								ast::terminal{
+								lexer_.terminals[node.reduce().value()].name,
+								static_cast<std::string>(input.substr(ts, 
+								lexer_i - ts))
+								});
+
 							out_start = token_start;
 							out_end = potential_reduce_i;
 							token_start = potential_reduce_i + 1;
 							potential_reduce_i = std::numeric_limits<size_t>::max();
 							current_lexer_node = lexer.start();
-							// lexer_i -= 1; // redo current char
-							// lexer_i += 1;
 							return node.reduce().value();
 						}
 						else // Try matching longer string
@@ -244,6 +362,15 @@ namespace fox_cc
 							potential_reduce_i = lexer_i;
 							potential_reduce_node = current_lexer_node;
 						}
+					}
+
+					if (lexer_i == std::size(input) && potential_reduce_i == std::numeric_limits<size_t>::max())
+					{
+						out_start = out_end = std::size(input);
+						lexer_tokens.push_back(
+							ast::terminal{lexer_.terminals[0].name }
+						);
+						return 0;
 					}
 
 					bool matched = false;
@@ -282,32 +409,38 @@ namespace fox_cc
 						out_start = token_start;
 						out_end = potential_reduce_i;
 						potential_reduce_i = std::numeric_limits<size_t>::max();
+						assert(false); // This should be a dead path
 						return lexer[potential_reduce_node].reduce().value();
 					}
 				}
 
+				lexer_tokens.push_back(
+					ast::terminal{ lexer_.terminals[0].name }
+				);
 				return {};
 			};
 
 			size_t start, end;
 
 			std::vector<size_t> reduction_stack;
+			std::vector<std::string> value_stack;
 			//reduction_stack.push_back(parser.start());
 			reduction_stack.push_back(0);
 
-			size_t e0 = lexer_function(start, end), e1 = lexer_function(start, end);
+			size_t e0 = lexer_function(start, end);
+			size_t e1 = lexer_function(start, end);
 			auto next_token = [&]() {e0 = e1; e1 = lexer_function(start, end); };
 
-			while(true)
+			bool modified = true;
+			while(modified)
 			{
+				modified = false;
 				size_t state_id = reduction_stack.back();
 
-				auto look_ahead = e0;
-
-				auto r = parser[state_id].value().action_table.find(look_ahead);
+				auto r = parser[state_id].value().action_table.find(e0);
 				if (r == std::end(parser[state_id].value().action_table))
 				{
-					throw "Compilation error at token...";
+					throw std::logic_error("Compilation error at token...");
 				}
 
 				if (std::holds_alternative<parser_compiler::parser_compiler_result::state_data::action_shift>(r->second))
@@ -315,37 +448,105 @@ namespace fox_cc
 					const auto& action = std::get<parser_compiler::parser_compiler_result::state_data::action_shift>(r->second);
 
 					auto shifted_token = e0;
+					value_stack.push_back(lexer_tokens[std::size(lexer_tokens) - 2].value);
 					next_token();
 					reduction_stack.push_back(shifted_token);
 					auto new_state = parser[state_id].next().at(shifted_token);
 					reduction_stack.push_back(new_state);
+					modified = true;
 				}
 				else if (std::holds_alternative<parser_compiler::parser_compiler_result::state_data::action_reduce>(r->second))
 				{
 					const auto& action = std::get<parser_compiler::parser_compiler_result::state_data::action_reduce>(r->second);
-					for (size_t i = 0; i < action.pop_count + 1; ++i)
+
+					// Get production
+					std::vector<std::size_t> production;
+					for (size_t i = 0; i < action.pop_count * 2; ++i)
+					{
+						if (i % 2 == 1)
+						{
+							production.push_back(reduction_stack.back());
+						}
+
 						reduction_stack.pop_back();
-					state_id = reduction_stack.back();
+					}
+
+					production = std::vector(std::rbegin(production), std::rend(production));
+
+					// Get arguments for the action
+					std::vector<std::string> values;
+					for(std::size_t i = 0; i < action.pop_count; ++i)
+					{
+						values.push_back(value_stack.back());
+						value_stack.pop_back();
+					}
+
+					values = std::vector(std::rbegin(values), std::rend(values));
+
+					std::size_t new_state = -1;
 					auto n = action.push_state;
+
+					state_id = reduction_stack.back();
 					reduction_stack.push_back(n);
-					auto new_state = parser[state_id].next().at(n);
-					reduction_stack.push_back(new_state);
+					bool is_done = (parser[state_id].next().contains(n) == false);
+
+					if(is_done == false)
+						new_state = parser[state_id].next().at(n);
+
+					// Find the satisfied production
+					auto& nt = std::get<
+						parser_compiler::parser_compiler_result::non_terminal>(parser_.tokens[n]);
+
+					value_stack.emplace_back();
+					for (std::size_t j = 0; j < std::size(nt.productions); ++j)
+					{
+						if (nt.productions[j] == production)
+						{
+							const auto& action_name = nt.production_actions[j];
+							if (std::empty(action_name))
+								break;
+
+							try
+							{
+								value_stack.back() =
+									this->actions_.at(action_name)(values);
+							}
+							catch (const std::out_of_range&)
+							{
+								throw std::logic_error("Undefined action.");
+							}
+
+							break;
+						}
+					}
+
+					if(is_done == false)
+					{
+						reduction_stack.push_back(new_state);
+					}
+					modified = ( is_done == false );	
+					
+				}
+				else if(std::holds_alternative<parser_compiler::parser_compiler_result::state_data::action_accept>(r->second))
+				{
+					modified = false;
 				}
 				else
 				{
 					assert(false);
 				}
 
-				std::cout << lexer_.terminals[e0].name << '\n';
+				for (std::size_t i = 0; i < reduction_stack.size(); ++i)
+				{
+					if(i % 2 == 0)
+						os << reduction_stack[i] << ' ';
+					else
+						os << "[" << reduction_stack[i] << "] ";
+				}
+				os << '\n';
 			}
 
-			auto match_token = [&, this, e0 = std::numeric_limits<size_t>::max()](size_t e1, size_t start, size_t end) mutable
-			{
-				
-			};
-
-
-			return {};
+			return value_stack.back();
 		}
 	};
 }

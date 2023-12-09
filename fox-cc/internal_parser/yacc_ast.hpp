@@ -12,13 +12,8 @@ namespace prs
 {
 	struct yacc_ast
 	{
-		std::vector<token_entry> c_declarations;
-
 		// %start name
 		token_entry start_identifier;
-
-		// %variant type [type]
-		std::vector<token_entry> variant_types;
 
 		// %token [<tag>] name REGEX
 		struct definition
@@ -31,9 +26,6 @@ namespace prs
 
 		std::vector<definition> token_definitions;
 
-		// %type <tag> name...
-		std::unordered_map<token_entry, token_entry> name_type;
-
 		struct production
 		{
 			token_entry name;
@@ -44,7 +36,5 @@ namespace prs
 		};
 
 		std::vector<production> productions;
-
-		std::vector<std::string_view> c_definitions;
 	};
 }

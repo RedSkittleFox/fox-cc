@@ -1,4 +1,5 @@
 #include "parser.hpp"
+#include <format>
 
 void prs::parser::next_token()
 {
@@ -59,7 +60,7 @@ void prs::parser::parse_tail()
 {
 	expect(token::END_OF_FILE, token::MARK);
 
-	if (e0()  == token::END_OF_FILE)
+	if (e0() == token::END_OF_FILE)
 		return;
 
 	lexer_.c_definition_token();
@@ -75,25 +76,16 @@ void prs::parser::parse_def()
 	case START:
 		parse_def_start();
 		break;
-	case VARIANT:
-		parse_def_variant();
-		break;
 	case LEFT:
 	case RIGHT:
 	case NONASSOC:
 	case TOKEN:
 		parse_def_token();
 		break;
-	case TYPE:
-		parse_def_type();
-		break;
-	case C_DECLARATION:
-		parse_def_c_decl();
-		break;
 	case MARK:
 		break;
 	default:
-		error();
+		error(std::format("Unknown token whilst parsing the grammar {}", e0().to_string()).c_str());
 		break;
 	}
 }
@@ -111,22 +103,6 @@ void prs::parser::parse_def_start()
 	next_token();
 }
 
-void prs::parser::parse_def_variant()
-{
-	expect(token::VARIANT);
-	next_token();
-
-	if (!std::empty(ast_.variant_types))
-		error();
-
-	expect(token::IDENTIFIER);
-
-	while(e0() == token::IDENTIFIER)
-	{
-		ast_.variant_types.push_back(e0());
-		next_token();
-	}
-}
 
 void prs::parser::parse_def_token()
 {
@@ -158,33 +134,6 @@ void prs::parser::parse_def_token()
 	next_token();
 
 	ast_.token_definitions.push_back(std::move(def));
-}
-
-void prs::parser::parse_def_type()
-{
-	expect(token::TYPE);
-	next_token();
-
-	expect(token::TAG);
-	auto tag = e0();
-	next_token();
-
-	expect(token::IDENTIFIER);
-	do
-	{
-		auto r = ast_.name_type.insert(
-			std::make_pair(e0(), tag)
-		);
-		next_token();
-
-	} while (e0() != token::IDENTIFIER);
-}
-
-void prs::parser::parse_def_c_decl()
-{
-	expect(token::C_DECLARATION);
-	ast_.c_declarations.push_back(e0());
-	next_token();
 }
 
 void prs::parser::parse_prod()
