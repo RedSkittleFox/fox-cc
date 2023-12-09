@@ -15,7 +15,7 @@ This project has been discontinued.
 * MSVC >= 10.0.22621.0
 * CMAKE
 
-# [Example](https://github.com/RedSkittleFox/fox-yacc/blob/main/fox-cc-demo/main.cpp)
+# [Example](https://github.com/RedSkittleFox/fox-cc/blob/main/fox-cc-demo/main.cpp)
 ```cpp
 #include <iostream>
 #include <fstream>
