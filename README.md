@@ -3,7 +3,7 @@ My implementation of a compiler compiler with YACC-like grammar.
 
 Features:
 * Custom linear-time regex engine
-* Built-in regex based lexer
+* Built-in regex-based lexer
 * YACC-like grammar syntax
 * LALR1 parser generator
 * Output in DOT format
@@ -105,6 +105,27 @@ precedence_0
 	return 0;
 }
 ```
+
+```
+%token	NUMBER		[0-9]+
+%token	OP_ADD		[+]
+%token	OP_SUB		[\-]
+%token	OP_MUL		[*]
+%token	OP_DIV		[/]
+%token	OP_MOD		[%]
+%token	L_PARENT	[(]
+%token	R_PARENT	[)]
+
+%start start
+
+%%
+start
+	:	NUMBER OP_ADD NUMBER { bin_op }
+	;
+%%
+```
+
+[LALR1 state machine](graphviz_example.svg)
 
 # TODO
 * Enable manual RR and SR conflict resolution.
